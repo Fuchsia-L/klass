@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -sL \"https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt\" -o \"c:/Users/Fuchs/Desktop/手搓transformer/input.txt\")",
+      "Read(//c/Users/Fuchs/Desktop/手搓transformer/**)"
+    ],
+    "additionalDirectories": [
+      "d:\\_PROJECTS\\cyberschedule-rn"
+    ]
+  }
+}

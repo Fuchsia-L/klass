@@ -1,0 +1,17 @@
+{
+  // 禁用 GitHub Copilot 补全
+  "github.copilot.enable": {
+    "*": false
+  },
+
+  // 禁用 IntelliCode AI 补全
+  "vsintellicode.modify.editor.suggestSelection": "disabled",
+
+  // 保留普通补全功能
+  "editor.suggest.enabled": true,
+  "editor.quickSuggestions": {
+    "other": "on",
+    "comments": "off",
+    "strings": "off"
+  }
+}
