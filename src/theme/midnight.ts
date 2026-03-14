@@ -1,0 +1,28 @@
+import { ThemeConfig } from './types';
+
+export const midnightTheme: ThemeConfig = {
+  id: 'midnight',
+  name: 'Midnight',
+  colors: {
+    bg: '#0F0A1A',
+    card: '#1A1128',
+    cardBorder: '#2D2145',
+    primary: '#C9A84C',
+    accent: '#8B5CF6',
+    success: '#34D399',
+    textMain: '#EDE9FE',
+    textSub: '#7C6F9B',
+    overlay: 'rgba(15, 10, 26, 0.9)',
+    inputBg: '#1E1533',
+    divider: '#2D2145',
+  },
+  fonts: {
+    heading: 'Orbitron-Bold',
+    body: 'System',
+  },
+  radius: {
+    card: 10,
+    button: 6,
+    sheet: 16,
+  },
+};

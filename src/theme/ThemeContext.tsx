@@ -1,31 +1,34 @@
 import React, { ReactNode, createContext, useContext, useEffect, useState } from 'react';
 import { loadJSON, saveJSON, STORAGE_KEYS } from '../platform/storage/async-storage';
 import { ThemeConfig } from './types';
-import { ThemeName, getTheme, isThemeName } from './index';
+import { DEFAULT_THEME, getTheme, isThemeName } from './index';
 
 interface ThemeContextValue {
-  themeName: ThemeName;
+  themeName: string;
   theme: ThemeConfig;
-  setThemeName: (name: ThemeName) => void;
+  setThemeName: (name: string) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [themeName, setThemeName] = useState<ThemeName>('cyber');
+  const [themeName, setThemeNameState] = useState<string>(DEFAULT_THEME);
   const theme = getTheme(themeName);
 
   useEffect(() => {
     loadJSON<string>(STORAGE_KEYS.theme).then((savedTheme) => {
       if (savedTheme && isThemeName(savedTheme)) {
-        setThemeName(savedTheme);
+        setThemeNameState(savedTheme);
       }
     });
   }, []);
 
-  useEffect(() => {
-    saveJSON(STORAGE_KEYS.theme, themeName);
-  }, [themeName]);
+  const setThemeName = (name: string) => {
+    if (isThemeName(name)) {
+      setThemeNameState(name);
+      saveJSON(STORAGE_KEYS.theme, name);
+    }
+  };
 
   return (
     <ThemeContext.Provider value={{ themeName, theme, setThemeName }}>

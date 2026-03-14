@@ -1,29 +1,24 @@
 import { useEffect, useState } from 'react';
 import { useThemeSettings } from '../../../theme/ThemeContext';
-import { ThemeName } from '../../../theme';
 import { SemesterConfig } from '../../schedule/types';
-import { loadSettings, saveSemesterSettings } from '../services/settings.service';
+import { loadSettings, saveSemesterSettings, clearAllData } from '../services/settings.service';
+import { DEFAULT_THEME } from '../../../theme';
 
 type FormState = {
   semesterStart: string;
   totalWeeks: string;
-  themeName: ThemeName;
 };
 
-function toFormState(
-  semester: SemesterConfig | null,
-  themeName: ThemeName,
-): FormState {
+function toFormState(semester: SemesterConfig | null): FormState {
   return {
     semesterStart: semester?.start_date?.slice(0, 10) ?? '',
     totalWeeks: semester ? String(semester.total_weeks) : '',
-    themeName,
   };
 }
 
 export function useSettingsForm() {
   const { themeName, setThemeName } = useThemeSettings();
-  const [form, setForm] = useState<FormState>(() => toFormState(null, themeName));
+  const [form, setForm] = useState<FormState>(() => toFormState(null));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -32,14 +27,13 @@ export function useSettingsForm() {
     let active = true;
     loadSettings().then((settings) => {
       if (!active) return;
-      setForm(toFormState(settings.semester, themeName));
+      setForm(toFormState(settings.semester));
       setLoading(false);
     });
-
     return () => {
       active = false;
     };
-  }, [themeName]);
+  }, []);
 
   const updateField = (field: keyof FormState, value: string) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -71,10 +65,16 @@ export function useSettingsForm() {
       start_date: new Date(trimmedStart).toISOString(),
       total_weeks: totalWeeks,
     });
-    setThemeName(form.themeName);
     setSaving(false);
     setMessage('设置已保存');
     return true;
+  };
+
+  const resetAll = async () => {
+    await clearAllData();
+    setForm(toFormState(null));
+    setThemeName(DEFAULT_THEME);
+    setMessage('所有数据已清除');
   };
 
   return {
@@ -82,11 +82,10 @@ export function useSettingsForm() {
     loading,
     saving,
     message,
+    themeName,
     updateField,
     save,
-    setThemeName: (nextTheme: ThemeName) => {
-      setForm((current) => ({ ...current, themeName: nextTheme }));
-      setMessage('');
-    },
+    setThemeName,
+    resetAll,
   };
 }

@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,12 +11,45 @@ import {
 } from 'react-native';
 import { AppBar } from '../src/shared/components/AppBar';
 import { useTheme } from '../src/theme/ThemeContext';
-import { THEME_OPTIONS } from '../src/theme';
+import { THEME_OPTIONS, getTheme } from '../src/theme';
 import { useSettingsForm } from '../src/features/settings';
+
+const PREVIEW_COLORS: Array<keyof ReturnType<typeof getTheme>['colors']> = [
+  'bg',
+  'primary',
+  'accent',
+  'success',
+  'card',
+];
 
 export default function SettingsScreen() {
   const theme = useTheme();
-  const { form, loading, saving, message, updateField, save, setThemeName } = useSettingsForm();
+  const {
+    form,
+    loading,
+    saving,
+    message,
+    themeName,
+    updateField,
+    save,
+    setThemeName,
+    resetAll,
+  } = useSettingsForm();
+
+  const handleClearAll = () => {
+    Alert.alert('清除所有数据', '确定要删除所有事件、学期设置和主题配置吗？此操作不可撤销。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '确认清除',
+        style: 'destructive',
+        onPress: resetAll,
+      },
+    ]);
+  };
+
+  const handleExport = () => {
+    Alert.alert('导出数据', '此功能即将上线，敬请期待。');
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.bg }]}>
@@ -27,6 +61,7 @@ export default function SettingsScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
+          {/* Theme Section */}
           <View
             style={[
               styles.section,
@@ -36,7 +71,99 @@ export default function SettingsScreen() {
               },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: theme.colors.primary, fontFamily: theme.fonts.heading }]}>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: theme.colors.primary, fontFamily: theme.fonts.heading },
+              ]}
+            >
+              主题
+            </Text>
+            <View style={styles.themeGrid}>
+              {THEME_OPTIONS.map((option) => {
+                const preview = getTheme(option.name);
+                const isSelected = option.name === themeName;
+                return (
+                  <TouchableOpacity
+                    key={option.name}
+                    activeOpacity={0.7}
+                    onPress={() => setThemeName(option.name)}
+                    style={[
+                      styles.themeCard,
+                      {
+                        backgroundColor: preview.colors.bg,
+                        borderColor: isSelected
+                          ? theme.colors.primary
+                          : theme.colors.cardBorder,
+                        borderWidth: isSelected ? 2 : 1,
+                      },
+                    ]}
+                  >
+                    <View style={styles.colorDots}>
+                      {PREVIEW_COLORS.map((colorKey) => (
+                        <View
+                          key={colorKey}
+                          style={[
+                            styles.colorDot,
+                            {
+                              backgroundColor: preview.colors[colorKey],
+                              borderColor:
+                                colorKey === 'bg'
+                                  ? preview.colors.cardBorder
+                                  : 'transparent',
+                              borderWidth: colorKey === 'bg' ? 1 : 0,
+                            },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <Text
+                      style={[
+                        styles.themeLabel,
+                        {
+                          color: isSelected
+                            ? theme.colors.primary
+                            : theme.colors.textSub,
+                          fontWeight: isSelected ? '700' : '400',
+                        },
+                      ]}
+                    >
+                      {option.label}
+                    </Text>
+                    {isSelected && (
+                      <View
+                        style={[
+                          styles.selectedBadge,
+                          { backgroundColor: theme.colors.primary },
+                        ]}
+                      >
+                        <Text style={[styles.selectedBadgeText, { color: theme.colors.bg }]}>
+                          ✓
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Semester Section */}
+          <View
+            style={[
+              styles.section,
+              {
+                backgroundColor: theme.colors.card,
+                borderColor: theme.colors.cardBorder,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: theme.colors.primary, fontFamily: theme.fonts.heading },
+              ]}
+            >
               学期设置
             </Text>
             <Text style={[styles.label, { color: theme.colors.textSub }]}>开始日期</Text>
@@ -74,6 +201,7 @@ export default function SettingsScreen() {
             />
           </View>
 
+          {/* Data Management Section */}
           <View
             style={[
               styles.section,
@@ -83,55 +211,52 @@ export default function SettingsScreen() {
               },
             ]}
           >
-            <Text style={[styles.sectionTitle, { color: theme.colors.primary, fontFamily: theme.fonts.heading }]}>
-              主题
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: theme.colors.primary, fontFamily: theme.fonts.heading },
+              ]}
+            >
+              数据管理
             </Text>
-            <View style={styles.themeRow}>
-              {THEME_OPTIONS.map((option) => {
-                const selected = option.name === form.themeName;
-                return (
-                  <TouchableOpacity
-                    key={option.name}
-                    onPress={() => setThemeName(option.name)}
-                    style={[
-                      styles.themeChip,
-                      {
-                        backgroundColor: selected ? `${theme.colors.primary}20` : theme.colors.inputBg,
-                        borderColor: selected ? theme.colors.primary : theme.colors.divider,
-                      },
-                    ]}
-                  >
-                    <Text style={{ color: selected ? theme.colors.primary : theme.colors.textMain }}>
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          <View
-            style={[
-              styles.section,
-              {
-                backgroundColor: theme.colors.card,
-                borderColor: theme.colors.cardBorder,
-              },
-            ]}
-          >
-            <Text style={[styles.sectionTitle, { color: theme.colors.primary, fontFamily: theme.fonts.heading }]}>
-              后续预留
-            </Text>
-            <Text style={[styles.helperText, { color: theme.colors.textSub }]}>
-              提醒、导入导出、账号同步都会继续放在这个 feature 下扩展。
-            </Text>
+            <TouchableOpacity
+              onPress={handleExport}
+              style={[
+                styles.dataButton,
+                {
+                  backgroundColor: theme.colors.inputBg,
+                  borderColor: theme.colors.divider,
+                },
+              ]}
+            >
+              <Text style={[styles.dataButtonText, { color: theme.colors.textMain }]}>
+                导出数据 (JSON)
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleClearAll}
+              style={[
+                styles.dataButton,
+                {
+                  backgroundColor: theme.colors.inputBg,
+                  borderColor: '#EF4444',
+                },
+              ]}
+            >
+              <Text style={[styles.dataButtonText, { color: '#EF4444' }]}>清除所有数据</Text>
+            </TouchableOpacity>
           </View>
 
           {message ? (
             <Text
               style={[
                 styles.message,
-                { color: message === '设置已保存' ? theme.colors.success : theme.colors.accent },
+                {
+                  color:
+                    message === '设置已保存' || message === '所有数据已清除'
+                      ? theme.colors.success
+                      : theme.colors.accent,
+                },
               ]}
             >
               {message}
@@ -150,7 +275,7 @@ export default function SettingsScreen() {
             ]}
           >
             <Text style={[styles.saveText, { color: theme.colors.bg }]}>
-              {saving ? '保存中...' : '保存设置'}
+              {saving ? '保存中...' : '保存学期设置'}
             </Text>
           </TouchableOpacity>
         </ScrollView>
@@ -195,20 +320,56 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginBottom: 12,
   },
-  themeRow: {
+  themeGrid: {
     flexDirection: 'row',
-    gap: 8,
     flexWrap: 'wrap',
+    gap: 10,
   },
-  themeChip: {
+  themeCard: {
+    width: '47%' as unknown as number,
+    borderRadius: 10,
+    padding: 12,
+    position: 'relative',
+  },
+  colorDots: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 8,
+  },
+  colorDot: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+  },
+  themeLabel: {
+    fontSize: 13,
+    letterSpacing: 0.5,
+  },
+  selectedBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dataButton: {
     borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+    alignItems: 'center',
   },
-  helperText: {
+  dataButtonText: {
     fontSize: 14,
-    lineHeight: 20,
+    fontWeight: '600',
   },
   message: {
     fontSize: 14,

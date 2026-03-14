@@ -1,7 +1,8 @@
 import { ThemeConfig } from './types';
 
 export const cyberTheme: ThemeConfig = {
-  name: 'cyber',
+  id: 'cyber',
+  name: 'Cyber',
   colors: {
     bg: '#06090F',
     card: '#0D1117',

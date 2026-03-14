@@ -1,4 +1,5 @@
 export interface ThemeConfig {
+  id: string;
   name: string;
   colors: {
     bg: string;
