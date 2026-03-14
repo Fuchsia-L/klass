@@ -93,8 +93,8 @@ export default function SettingsScreen() {
                       {
                         backgroundColor: preview.colors.bg,
                         borderColor: isSelected
-                          ? theme.colors.primary
-                          : theme.colors.cardBorder,
+                          ? preview.colors.primary
+                          : preview.colors.cardBorder,
                         borderWidth: isSelected ? 2 : 1,
                       },
                     ]}
@@ -122,8 +122,8 @@ export default function SettingsScreen() {
                         styles.themeLabel,
                         {
                           color: isSelected
-                            ? theme.colors.primary
-                            : theme.colors.textSub,
+                            ? preview.colors.primary
+                            : preview.colors.textSub,
                           fontWeight: isSelected ? '700' : '400',
                         },
                       ]}
@@ -134,10 +134,10 @@ export default function SettingsScreen() {
                       <View
                         style={[
                           styles.selectedBadge,
-                          { backgroundColor: theme.colors.primary },
+                          { backgroundColor: preview.colors.primary },
                         ]}
                       >
-                        <Text style={[styles.selectedBadgeText, { color: theme.colors.bg }]}>
+                        <Text style={[styles.selectedBadgeText, { color: preview.colors.bg }]}>
                           ✓
                         </Text>
                       </View>
@@ -239,11 +239,11 @@ export default function SettingsScreen() {
                 styles.dataButton,
                 {
                   backgroundColor: theme.colors.inputBg,
-                  borderColor: '#EF4444',
+                  borderColor: theme.colors.danger,
                 },
               ]}
             >
-              <Text style={[styles.dataButtonText, { color: '#EF4444' }]}>清除所有数据</Text>
+              <Text style={[styles.dataButtonText, { color: theme.colors.danger }]}>清除所有数据</Text>
             </TouchableOpacity>
           </View>
 
@@ -326,7 +326,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   themeCard: {
-    width: '47%' as unknown as number,
+    width: '47%' as any,
     borderRadius: 10,
     padding: 12,
     position: 'relative',

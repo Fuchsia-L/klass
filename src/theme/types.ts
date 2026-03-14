@@ -8,6 +8,7 @@ export interface ThemeConfig {
     primary: string;
     accent: string;
     success: string;
+    danger: string;
     textMain: string;
     textSub: string;
     overlay: string;
