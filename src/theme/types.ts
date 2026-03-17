@@ -14,6 +14,9 @@ export interface ThemeConfig {
     overlay: string;
     inputBg: string;
     divider: string;
+    priorityHigh: string;
+    priorityMedium: string;
+    priorityLow: string;
   };
   fonts: {
     heading: string;

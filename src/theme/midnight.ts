@@ -16,6 +16,9 @@ export const midnightTheme: ThemeConfig = {
     overlay: 'rgba(15, 10, 26, 0.9)',
     inputBg: '#1E1533',
     divider: '#2D2145',
+    priorityHigh: '#EF4444',
+    priorityMedium: '#F59E0B',
+    priorityLow: '#6B7280',
   },
   fonts: {
     heading: 'Orbitron-Bold',

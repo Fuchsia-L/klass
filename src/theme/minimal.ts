@@ -16,6 +16,9 @@ export const minimalTheme: ThemeConfig = {
     overlay: 'rgba(250, 250, 250, 0.9)',
     inputBg: '#F3F4F6',
     divider: '#E5E7EB',
+    priorityHigh: '#DC2626',
+    priorityMedium: '#D97706',
+    priorityLow: '#9CA3AF',
   },
   fonts: {
     heading: 'Orbitron-Bold',

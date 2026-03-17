@@ -16,6 +16,9 @@ export const sakuraTheme: ThemeConfig = {
     overlay: 'rgba(255, 245, 247, 0.9)',
     inputBg: '#FFF1F2',
     divider: '#FECDD3',
+    priorityHigh: '#E11D48',
+    priorityMedium: '#F59E0B',
+    priorityLow: '#A8A29E',
   },
   fonts: {
     heading: 'Orbitron-Bold',

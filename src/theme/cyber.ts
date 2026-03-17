@@ -16,6 +16,9 @@ export const cyberTheme: ThemeConfig = {
     overlay: 'rgba(6, 9, 15, 0.85)',
     inputBg: '#161B22',
     divider: '#1B2332',
+    priorityHigh: '#EF4444',
+    priorityMedium: '#F59E0B',
+    priorityLow: '#6B7280',
   },
   fonts: {
     heading: 'Orbitron-Bold',

@@ -5,11 +5,13 @@ import { AppBar } from '../src/shared/components/AppBar';
 import { FAB } from '../src/shared/components/FAB';
 import { EventCard, EventSheet, ScheduleEvent, useEvents } from '../src/features/schedule';
 import { expandRepeatingEvents } from '../src/features/schedule/domain/repeat';
+import { TodoSection, useTodos } from '../src/features/todo';
 import { Calendar } from 'lucide-react-native';
 
 export default function HomeScreen() {
   const theme = useTheme();
   const { events, loading, refresh } = useEvents();
+  const { todos, loading: todosLoading, refresh: refreshTodos } = useTodos();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [sheetMode, setSheetMode] = useState<'view' | 'create' | 'edit'>('create');
   const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
@@ -46,8 +48,8 @@ export default function HomeScreen() {
   }, [events, today.toDateString()]);
 
   const sections = [
-    { title: '今日', data: todayEvents, empty: todayEvents.length === 0 },
-    { title: '明日', data: tomorrowEvents, empty: tomorrowEvents.length === 0 },
+    { title: '今日', data: todayEvents.length > 0 ? todayEvents : [null as unknown as ScheduleEvent], empty: todayEvents.length === 0 },
+    { title: '明日', data: tomorrowEvents.length > 0 ? tomorrowEvents : [null as unknown as ScheduleEvent], empty: tomorrowEvents.length === 0 },
   ];
 
   const openEvent = (ev: ScheduleEvent) => {
@@ -71,7 +73,16 @@ export default function HomeScreen() {
 
       <SectionList
         sections={sections}
-        keyExtractor={(item, idx) => item.id + idx}
+        keyExtractor={(item, idx) => (item ? item.id + idx : `empty-${idx}`)}
+        contentContainerStyle={styles.listContent}
+        stickySectionHeadersEnabled={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading || todosLoading}
+            onRefresh={() => { refresh(); refreshTodos(); }}
+            tintColor={theme.colors.primary}
+          />
+        }
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
             <View style={[styles.sectionDot, { backgroundColor: theme.colors.primary }]} />
@@ -79,26 +90,24 @@ export default function HomeScreen() {
               {section.title}
             </Text>
             <Text style={[styles.sectionCount, { color: theme.colors.textSub }]}>
-              {section.data.length}
+              {section.empty ? 0 : section.data.length}
             </Text>
           </View>
         )}
-        renderItem={({ item }) => <EventCard event={item} onPress={() => openEvent(item)} />}
-        renderSectionFooter={({ section }) =>
-          section.empty ? (
-            <View style={styles.emptyState}>
-              <Calendar size={32} color={theme.colors.textSub} />
-              <Text style={[styles.emptyText, { color: theme.colors.textSub }]}>
-                {section.title === '今日' ? '今日无事' : '明日无事'}
-              </Text>
-            </View>
-          ) : null
-        }
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={refresh} tintColor={theme.colors.primary} />
-        }
-        contentContainerStyle={styles.listContent}
-        stickySectionHeadersEnabled={false}
+        renderItem={({ item, section }) => {
+          if (section.empty) {
+            return (
+              <View style={styles.emptyState}>
+                <Calendar size={32} color={theme.colors.textSub} />
+                <Text style={[styles.emptyText, { color: theme.colors.textSub }]}>
+                  {section.title === '今日' ? '今日无事' : '明日无事'}
+                </Text>
+              </View>
+            );
+          }
+          return <EventCard event={item} onPress={() => openEvent(item)} />;
+        }}
+        ListFooterComponent={<TodoSection todos={todos} loading={todosLoading} />}
       />
 
       <FAB onPress={openCreate} />

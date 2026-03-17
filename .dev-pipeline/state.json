@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "requirement": "为 klass 课表 app 添加待办（Todo）功能。技术栈：Expo + React Native + TypeScript，数据用 AsyncStorage 本地持久化。功能要求：1. 三种待办类型：每日待办（每天自动刷新/重置完成状态）、每周待办（每周自动刷新）、长期待办（不自动刷新，手动管理）。2. 每个待办可设置优先级（高/中/低），列表按优先级排序展示。3. 支持创建/编辑/删除/标记完成。4. 在 Home 页面展示，三种类型用 tab 或分区展示。5. 遵循现有项目的 feature 模块化结构（domain / hooks / services / storage / components），新建 src/features/todo/ 目录。约束：不动现有的 schedule 和 settings 模块的逻辑。只做功能和基本可用的 UI，不做视觉美化（后续单独处理）。先阅读项目的 ARCHITECTURE.md 和现有 feature 目录结构再动手。",
+  "workdir": "D:\\_PROJECTS\\cyberschedule-rn",
+  "createdAt": "2026-03-17T07:42:04.156Z",
+  "updatedAt": "2026-03-17T07:42:04.488Z",
+  "status": "failed",
+  "currentPhase": 0,
+  "plan": null,
+  "phases": {},
+  "finalReview": null,
+  "log": [
+    {
+      "timestamp": "2026-03-17T07:42:04.269Z",
+      "step": "decompose",
+      "message": "Codex attempt 1",
+      "ok": false
+    },
+    {
+      "timestamp": "2026-03-17T07:42:04.377Z",
+      "step": "decompose",
+      "message": "Codex attempt 2",
+      "ok": false
+    },
+    {
+      "timestamp": "2026-03-17T07:42:04.488Z",
+      "step": "decompose",
+      "message": "Codex attempt 3",
+      "ok": false
+    },
+    {
+      "timestamp": "2026-03-17T07:42:04.488Z",
+      "step": "pipeline",
+      "message": "Planning failed",
+      "error": "Codex failed to decompose requirement"
+    }
+  ]
+}
