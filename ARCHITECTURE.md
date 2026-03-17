@@ -1,5 +1,9 @@
 # CyberSchedule RN — 架构文档
 
+## Related Docs
+
+- Android 构建与打包说明：`BUILD_ANDROID.md`
+
 ## 技术栈
 
 | 层 | 选型 | 版本 |

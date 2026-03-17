@@ -249,14 +249,25 @@ export function EventSheet({
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>开始时间</Text>
             {isEditable ? (
-              <DateTimePicker value={startTime} onChange={setStartTime} theme={theme} />
+              <DateTimePicker
+                value={startTime}
+                onChange={setStartTime}
+                theme={theme}
+                minimumHour={6}
+              />
             ) : (
               <Text style={[styles.value, { color: theme.colors.textMain }]}>{formatDateTime(startTime)}</Text>
             )}
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>结束时间</Text>
             {isEditable ? (
-              <DateTimePicker value={endTime} onChange={setEndTime} theme={theme} />
+              <DateTimePicker
+                value={endTime}
+                onChange={setEndTime}
+                theme={theme}
+                minimumHour={6}
+                allowMidnight24
+              />
             ) : (
               <Text style={[styles.value, { color: theme.colors.textMain }]}>{formatDateTime(endTime)}</Text>
             )}

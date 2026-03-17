@@ -15,9 +15,8 @@ import {
   CATEGORIES,
   EventSheet,
   ScheduleEvent,
-  SemesterConfig,
-  loadSemesterConfig,
   useEvents,
+  useSemesterConfig,
 } from '../src/features/schedule';
 import {
   getWeekStart,
@@ -38,30 +37,16 @@ const DAY_COL_WIDTH = (SCREEN_WIDTH - TIME_COL_WIDTH) / 7;
 export default function MatrixScreen() {
   const theme = useTheme();
   const { events } = useEvents();
+  const { semester } = useSemesterConfig();
   const scrollRef = useRef<ScrollView>(null);
 
   const [weekOffset, setWeekOffset] = useState(0);
-  const [semester, setSemester] = useState<SemesterConfig | null>(null);
-
   const [sheetVisible, setSheetVisible] = useState(false);
   const [sheetMode, setSheetMode] = useState<'view' | 'create' | 'edit'>('create');
   const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent | null>(null);
   const [defaultStart, setDefaultStart] = useState<Date | undefined>();
   const [defaultEnd, setDefaultEnd] = useState<Date | undefined>();
-  const isMountedRef = useRef(true);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    loadSemesterConfig().then((config) => {
-      if (!isMountedRef.current) return;
-      setSemester(config);
-    });
-
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
 
   const now = new Date();
   const baseWeekStart = getWeekStart(now);

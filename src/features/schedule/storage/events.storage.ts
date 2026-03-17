@@ -58,3 +58,7 @@ export async function saveEventsToStorage(events: ScheduleEvent[]): Promise<void
   cachedEvents = cloneEvents(events);
   await saveJSON(STORAGE_KEYS.events, cachedEvents);
 }
+
+export function clearEventsCache(): void {
+  cachedEvents = null;
+}

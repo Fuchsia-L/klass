@@ -1,7 +1,11 @@
 import { generateId } from '../../../shared/lib/id';
 import { detectConflicts } from '../domain/conflicts';
-import { validateTimeRange } from '../domain/validation';
-import { loadEventsFromStorage, saveEventsToStorage } from '../storage/events.storage';
+import { validateEventTimeWindow } from '../domain/validation';
+import {
+  clearEventsCache,
+  loadEventsFromStorage,
+  saveEventsToStorage,
+} from '../storage/events.storage';
 import { ScheduleEvent } from '../types';
 
 type EventMutationResult = {
@@ -33,8 +37,11 @@ export function subscribeToEvents(listener: () => void): () => void {
 }
 
 export async function addEvent(event: EventInput): Promise<EventMutationResult> {
-  if (!validateTimeRange(event.start_time, event.end_time)) {
-    return { success: false, error: '开始时间必须早于结束时间' };
+  if (!validateEventTimeWindow(event.start_time, event.end_time)) {
+    return {
+      success: false,
+      error: '事件时间需在 06:00 到 24:00 内，且结束时间必须晚于开始时间',
+    };
   }
 
   const nextEvent: ScheduleEvent = {
@@ -54,8 +61,11 @@ export async function addEvent(event: EventInput): Promise<EventMutationResult> 
 }
 
 export async function updateEvent(event: ScheduleEvent): Promise<EventMutationResult> {
-  if (!validateTimeRange(event.start_time, event.end_time)) {
-    return { success: false, error: '开始时间必须早于结束时间' };
+  if (!validateEventTimeWindow(event.start_time, event.end_time)) {
+    return {
+      success: false,
+      error: '事件时间需在 06:00 到 24:00 内，且结束时间必须晚于开始时间',
+    };
   }
 
   const events = await loadEvents();
@@ -80,4 +90,9 @@ export async function toggleComplete(id: string): Promise<void> {
       event.id === id ? { ...event, is_completed: !event.is_completed } : event,
     ),
   );
+}
+
+export function resetEventsState(): void {
+  clearEventsCache();
+  notify();
 }
