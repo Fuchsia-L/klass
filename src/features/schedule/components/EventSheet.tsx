@@ -53,6 +53,7 @@ export function EventSheet({
 }: EventSheetProps) {
   const theme = useTheme();
   const [mode, setMode] = useState<SheetMode>(initialMode);
+  const handlePickerActive = useCallback((active: boolean) => setPickerActive(active), []);
   const [pickerActive, setPickerActive] = useState(false);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<CategoryKey>('其他');
@@ -250,29 +251,27 @@ export function EventSheet({
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>开始时间</Text>
             {isEditable ? (
-              <View onTouchStart={() => setPickerActive(true)} onTouchEnd={() => setPickerActive(false)}>
-                <DateTimePicker
-                  value={startTime}
-                  onChange={setStartTime}
-                  theme={theme}
-                  minimumHour={6}
-                />
-              </View>
+              <DateTimePicker
+                value={startTime}
+                onChange={setStartTime}
+                theme={theme}
+                minimumHour={6}
+                onPickerActive={handlePickerActive}
+              />
             ) : (
               <Text style={[styles.value, { color: theme.colors.textMain }]}>{formatDateTime(startTime)}</Text>
             )}
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>结束时间</Text>
             {isEditable ? (
-              <View onTouchStart={() => setPickerActive(true)} onTouchEnd={() => setPickerActive(false)}>
-                <DateTimePicker
-                  value={endTime}
-                  onChange={setEndTime}
-                  theme={theme}
-                  minimumHour={6}
-                  allowMidnight24
-                />
-              </View>
+              <DateTimePicker
+                value={endTime}
+                onChange={setEndTime}
+                theme={theme}
+                minimumHour={6}
+                allowMidnight24
+                onPickerActive={handlePickerActive}
+              />
             ) : (
               <Text style={[styles.value, { color: theme.colors.textMain }]}>{formatDateTime(endTime)}</Text>
             )}

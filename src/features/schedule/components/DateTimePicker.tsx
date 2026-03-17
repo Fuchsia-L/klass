@@ -19,6 +19,7 @@ interface DateTimePickerProps {
   theme: ThemeConfig;
   minimumHour?: number;
   allowMidnight24?: boolean;
+  onPickerActive?: (active: boolean) => void;
 }
 
 type PickerColumnProps = {
@@ -27,6 +28,7 @@ type PickerColumnProps = {
   theme: ThemeConfig;
   onSelect: (value: number) => void;
   formatter?: (value: number) => string;
+  onPickerActive?: (active: boolean) => void;
 };
 
 const ITEM_HEIGHT = 40;
@@ -77,6 +79,7 @@ function PickerColumn({
   theme,
   onSelect,
   formatter = (value) => value.toString().padStart(2, '0'),
+  onPickerActive,
 }: PickerColumnProps) {
   const listRef = useRef<FlatList<number>>(null);
   const paddingItemCount = Math.floor(VISIBLE_ITEMS / 2);
@@ -142,6 +145,9 @@ function PickerColumn({
           borderColor: theme.colors.divider,
         },
       ]}
+      onTouchStart={() => onPickerActive?.(true)}
+      onTouchEnd={() => onPickerActive?.(false)}
+      onTouchCancel={() => onPickerActive?.(false)}
     >
       <View
         pointerEvents="none"
@@ -182,6 +188,7 @@ export default function DateTimePicker({
   theme,
   minimumHour = 6,
   allowMidnight24 = false,
+  onPickerActive,
 }: DateTimePickerProps) {
   const { displayDate, hour, minute } = getDisplayState(value, allowMidnight24, minimumHour);
 
@@ -283,6 +290,7 @@ export default function DateTimePicker({
           theme={theme}
           onSelect={handleSelectHour}
           formatter={(item) => item.toString().padStart(2, '0')}
+          onPickerActive={onPickerActive}
         />
         <Text style={[styles.colon, { color: theme.colors.primary }]}>:</Text>
         <PickerColumn
@@ -290,6 +298,7 @@ export default function DateTimePicker({
           selectedValue={selectedMinute}
           theme={theme}
           onSelect={handleSelectMinute}
+          onPickerActive={onPickerActive}
         />
       </View>
     </View>
