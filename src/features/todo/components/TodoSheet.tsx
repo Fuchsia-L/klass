@@ -10,13 +10,16 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { X } from 'lucide-react-native';
+import { Edit3, X } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
 import { TodoItem, TodoType, Priority, TODO_TYPE_LABELS, PRIORITY_LABELS } from '../types';
 import { addTodo, updateTodo } from '../services/todo.service';
 
+type SheetMode = 'create' | 'detail' | 'edit';
+
 interface Props {
   visible: boolean;
+  mode: 'create' | 'detail';
   todo: TodoItem | null;
   onClose: () => void;
 }
@@ -24,27 +27,32 @@ interface Props {
 const TODO_TYPES: TodoType[] = ['daily', 'weekly', 'longterm'];
 const PRIORITIES: Priority[] = ['high', 'medium', 'low'];
 
-export function TodoSheet({ visible, todo, onClose }: Props) {
+export function TodoSheet({ visible, mode: initialMode, todo, onClose }: Props) {
   const theme = useTheme();
+  const [mode, setMode] = useState<SheetMode>(initialMode);
   const [title, setTitle] = useState('');
   const [type, setType] = useState<TodoType>('daily');
   const [priority, setPriority] = useState<Priority>('medium');
+  const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
     if (visible) {
+      setMode(initialMode);
       setError('');
       if (todo) {
         setTitle(todo.title);
         setType(todo.type);
         setPriority(todo.priority);
+        setNotes(todo.notes ?? '');
       } else {
         setTitle('');
         setType('daily');
         setPriority('medium');
+        setNotes('');
       }
     }
-  }, [visible, todo]);
+  }, [visible, todo, initialMode]);
 
   const handleSave = async () => {
     const trimmed = title.trim();
@@ -52,12 +60,23 @@ export function TodoSheet({ visible, todo, onClose }: Props) {
       setError('请输入标题');
       return;
     }
-    if (todo) {
-      await updateTodo(todo.id, { title: trimmed, type, priority });
+    const input = { title: trimmed, type, priority, notes: notes.trim() || undefined };
+    if (todo && mode === 'edit') {
+      await updateTodo(todo.id, input);
     } else {
-      await addTodo({ title: trimmed, type, priority });
+      await addTodo(input);
     }
     onClose();
+  };
+
+  const isEditable = mode === 'create' || mode === 'edit';
+  const isDetail = mode === 'detail';
+
+  const headerTitle = mode === 'create' ? '新建待办' : mode === 'edit' ? '编辑待办' : '待办详情';
+
+  const formatDate = (iso: string) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
   };
 
   return (
@@ -80,99 +99,153 @@ export function TodoSheet({ visible, todo, onClose }: Props) {
             {/* Header */}
             <View style={styles.header}>
               <Text style={[styles.headerTitle, { color: theme.colors.textMain, fontFamily: theme.fonts.heading }]}>
-                {todo ? '编辑待办' : '新建待办'}
+                {headerTitle}
               </Text>
-              <TouchableOpacity onPress={onClose}>
-                <X size={24} color={theme.colors.textSub} />
-              </TouchableOpacity>
+              <View style={styles.headerActions}>
+                {isDetail ? (
+                  <TouchableOpacity onPress={() => setMode('edit')} style={styles.headerBtn}>
+                    <Edit3 size={20} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                ) : null}
+                <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
+                  <X size={24} color={theme.colors.textSub} />
+                </TouchableOpacity>
+              </View>
             </View>
 
             <ScrollView style={styles.body}>
-              {/* Title input */}
+              {/* Title */}
               <Text style={[styles.label, { color: theme.colors.textSub }]}>标题</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  {
-                    backgroundColor: theme.colors.inputBg,
-                    color: theme.colors.textMain,
-                    borderColor: theme.colors.cardBorder,
-                  },
-                ]}
-                value={title}
-                onChangeText={setTitle}
-                placeholder="待办内容"
-                placeholderTextColor={theme.colors.textSub}
-              />
+              {isEditable ? (
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: theme.colors.inputBg,
+                      color: theme.colors.textMain,
+                      borderColor: theme.colors.cardBorder,
+                    },
+                  ]}
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder="待办内容"
+                  placeholderTextColor={theme.colors.textSub}
+                  maxLength={20}
+                />
+              ) : (
+                <Text style={[styles.value, { color: theme.colors.textMain }]}>{title}</Text>
+              )}
 
-              {/* Type selector */}
+              {/* Type */}
               <Text style={[styles.label, { color: theme.colors.textSub }]}>类型</Text>
-              <View style={styles.optionRow}>
-                {TODO_TYPES.map((t) => (
-                  <TouchableOpacity
-                    key={t}
-                    onPress={() => setType(t)}
-                    style={[
-                      styles.optionBtn,
-                      {
-                        backgroundColor: type === t ? theme.colors.primary : theme.colors.inputBg,
-                        borderColor: theme.colors.cardBorder,
-                      },
-                    ]}
-                  >
-                    <Text
+              {isEditable ? (
+                <View style={styles.optionRow}>
+                  {TODO_TYPES.map((t) => (
+                    <TouchableOpacity
+                      key={t}
+                      onPress={() => setType(t)}
                       style={[
-                        styles.optionText,
-                        { color: type === t ? theme.colors.bg : theme.colors.textMain },
+                        styles.optionBtn,
+                        {
+                          backgroundColor: type === t ? theme.colors.primary : theme.colors.inputBg,
+                          borderColor: theme.colors.cardBorder,
+                        },
                       ]}
                     >
-                      {TODO_TYPE_LABELS[t]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                      <Text
+                        style={[
+                          styles.optionText,
+                          { color: type === t ? theme.colors.bg : theme.colors.textMain },
+                        ]}
+                      >
+                        {TODO_TYPE_LABELS[t]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[styles.value, { color: theme.colors.textMain }]}>{TODO_TYPE_LABELS[type]}</Text>
+              )}
 
-              {/* Priority selector */}
+              {/* Priority */}
               <Text style={[styles.label, { color: theme.colors.textSub }]}>优先级</Text>
-              <View style={styles.optionRow}>
-                {PRIORITIES.map((p) => (
-                  <TouchableOpacity
-                    key={p}
-                    onPress={() => setPriority(p)}
-                    style={[
-                      styles.optionBtn,
-                      {
-                        backgroundColor: priority === p ? theme.colors.primary : theme.colors.inputBg,
-                        borderColor: theme.colors.cardBorder,
-                      },
-                    ]}
-                  >
-                    <Text
+              {isEditable ? (
+                <View style={styles.optionRow}>
+                  {PRIORITIES.map((p) => (
+                    <TouchableOpacity
+                      key={p}
+                      onPress={() => setPriority(p)}
                       style={[
-                        styles.optionText,
-                        { color: priority === p ? theme.colors.bg : theme.colors.textMain },
+                        styles.optionBtn,
+                        {
+                          backgroundColor: priority === p ? theme.colors.primary : theme.colors.inputBg,
+                          borderColor: theme.colors.cardBorder,
+                        },
                       ]}
                     >
-                      {PRIORITY_LABELS[p]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                      <Text
+                        style={[
+                          styles.optionText,
+                          { color: priority === p ? theme.colors.bg : theme.colors.textMain },
+                        ]}
+                      >
+                        {PRIORITY_LABELS[p]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[styles.value, { color: theme.colors.textMain }]}>{PRIORITY_LABELS[priority]}</Text>
+              )}
+
+              {/* Notes */}
+              <Text style={[styles.label, { color: theme.colors.textSub }]}>备注</Text>
+              {isEditable ? (
+                <TextInput
+                  style={[
+                    styles.input,
+                    styles.textArea,
+                    {
+                      backgroundColor: theme.colors.inputBg,
+                      color: theme.colors.textMain,
+                      borderColor: theme.colors.cardBorder,
+                    },
+                  ]}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="可选"
+                  placeholderTextColor={theme.colors.textSub}
+                  multiline
+                  numberOfLines={3}
+                />
+              ) : (
+                <Text style={[styles.value, { color: theme.colors.textMain }]}>{notes || '-'}</Text>
+              )}
+
+              {/* Created date (detail/edit only) */}
+              {todo ? (
+                <>
+                  <Text style={[styles.label, { color: theme.colors.textSub }]}>创建日期</Text>
+                  <Text style={[styles.value, { color: theme.colors.textMain }]}>{formatDate(todo.created_at)}</Text>
+                </>
+              ) : null}
             </ScrollView>
 
             {error ? (
               <Text style={[styles.errorText, { color: theme.colors.accent }]}>{error}</Text>
             ) : null}
 
-            {/* Save button */}
-            <TouchableOpacity
-              onPress={handleSave}
-              style={[styles.saveBtn, { backgroundColor: theme.colors.primary }]}
-            >
-              <Text style={[styles.saveBtnText, { color: theme.colors.bg, fontFamily: theme.fonts.heading }]}>
-                {todo ? '保存' : '创建'}
-              </Text>
-            </TouchableOpacity>
+            {/* Save button (only in create/edit mode) */}
+            {isEditable ? (
+              <TouchableOpacity
+                onPress={handleSave}
+                style={[styles.saveBtn, { backgroundColor: theme.colors.primary }]}
+              >
+                <Text style={[styles.saveBtnText, { color: theme.colors.bg, fontFamily: theme.fonts.heading }]}>
+                  {mode === 'edit' ? '保存' : '创建'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -201,6 +274,13 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 16,
   },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  headerBtn: {
+    padding: 4,
+  },
   body: {
     paddingHorizontal: 16,
   },
@@ -209,12 +289,19 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
+  value: {
+    fontSize: 15,
+  },
   input: {
     borderWidth: 1,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
+  },
+  textArea: {
+    minHeight: 60,
+    textAlignVertical: 'top',
   },
   optionRow: {
     flexDirection: 'row',

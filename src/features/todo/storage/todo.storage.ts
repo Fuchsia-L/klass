@@ -25,7 +25,8 @@ function isTodoItem(v: unknown): v is TodoItem {
     isValidPriority(t.priority) &&
     typeof t.is_completed === 'boolean' &&
     typeof t.last_reset === 'string' &&
-    typeof t.created_at === 'string'
+    typeof t.created_at === 'string' &&
+    (t.notes === undefined || typeof t.notes === 'string')
   );
 }
 

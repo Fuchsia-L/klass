@@ -29,4 +29,5 @@ export interface TodoItem {
   /** ISO date string of last completion reset */
   last_reset: string;
   created_at: string;
+  notes?: string;
 }

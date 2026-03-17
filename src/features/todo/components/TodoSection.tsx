@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { Alert, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { ClipboardList, Plus } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
 import { TodoItem, TodoType, TODO_TYPE_LABELS, PRIORITY_ORDER } from '../types';
@@ -24,18 +24,32 @@ export function TodoSection({ todos, loading }: Props) {
     () =>
       todos
         .filter((t) => t.type === activeTab)
-        .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]),
+        .sort((a, b) => {
+          if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
+          return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+        }),
     [todos, activeTab],
   );
 
+  const [sheetMode, setSheetMode] = useState<'create' | 'detail'>('create');
+
   const openCreate = () => {
     setEditingTodo(null);
+    setSheetMode('create');
     setSheetVisible(true);
   };
 
-  const openEdit = (todo: TodoItem) => {
+  const openDetail = (todo: TodoItem) => {
     setEditingTodo(todo);
+    setSheetMode('detail');
     setSheetVisible(true);
+  };
+
+  const confirmDelete = (todo: TodoItem) => {
+    Alert.alert('确认删除', '确定要删除这个待办吗？', [
+      { text: '取消', style: 'cancel' },
+      { text: '删除', style: 'destructive', onPress: () => deleteTodo(todo.id) },
+    ]);
   };
 
   return (
@@ -92,13 +106,13 @@ export function TodoSection({ todos, loading }: Props) {
             key={todo.id}
             todo={todo}
             onToggle={() => toggleTodoComplete(todo.id)}
-            onPress={() => openEdit(todo)}
-            onDelete={() => deleteTodo(todo.id)}
+            onPress={() => openDetail(todo)}
+            onDelete={() => confirmDelete(todo)}
           />
         ))
       )}
 
-      <TodoSheet visible={sheetVisible} todo={editingTodo} onClose={() => setSheetVisible(false)} />
+      <TodoSheet visible={sheetVisible} mode={sheetMode} todo={editingTodo} onClose={() => setSheetVisible(false)} />
     </View>
   );
 }

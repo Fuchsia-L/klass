@@ -142,6 +142,8 @@ function PickerColumn({
           borderColor: theme.colors.divider,
         },
       ]}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
     >
       <View
         pointerEvents="none"
@@ -170,6 +172,7 @@ function PickerColumn({
         })}
         onMomentumScrollEnd={handleMomentumEnd}
         contentContainerStyle={styles.wheelContent}
+        nestedScrollEnabled
       />
     </View>
   );

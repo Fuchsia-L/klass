@@ -7,6 +7,7 @@ export type TodoInput = {
   title: string;
   type: TodoType;
   priority: Priority;
+  notes?: string;
 };
 
 const listeners = new Set<() => void>();
@@ -45,6 +46,7 @@ export async function addTodo(input: TodoInput): Promise<void> {
     is_completed: false,
     last_reset: now,
     created_at: now,
+    notes: input.notes,
   };
   const todos = await loadTodos();
   await persist([...todos, todo]);
@@ -53,7 +55,7 @@ export async function addTodo(input: TodoInput): Promise<void> {
 export async function updateTodo(id: string, input: TodoInput): Promise<void> {
   const todos = await loadTodos();
   await persist(
-    todos.map((t) => (t.id === id ? { ...t, title: input.title, type: input.type, priority: input.priority } : t)),
+    todos.map((t) => (t.id === id ? { ...t, title: input.title, type: input.type, priority: input.priority, notes: input.notes } : t)),
   );
 }
 
