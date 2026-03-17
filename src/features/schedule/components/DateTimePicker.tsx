@@ -142,8 +142,6 @@ function PickerColumn({
           borderColor: theme.colors.divider,
         },
       ]}
-      onStartShouldSetResponder={() => true}
-      onMoveShouldSetResponder={() => true}
     >
       <View
         pointerEvents="none"

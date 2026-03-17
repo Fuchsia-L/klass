@@ -24,10 +24,7 @@ export function TodoSection({ todos, loading }: Props) {
     () =>
       todos
         .filter((t) => t.type === activeTab)
-        .sort((a, b) => {
-          if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
-          return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-        }),
+        .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]),
     [todos, activeTab],
   );
 

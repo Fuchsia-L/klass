@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -53,6 +53,7 @@ export function EventSheet({
 }: EventSheetProps) {
   const theme = useTheme();
   const [mode, setMode] = useState<SheetMode>(initialMode);
+  const [pickerActive, setPickerActive] = useState(false);
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState<CategoryKey>('其他');
   const [startTime, setStartTime] = useState(new Date());
@@ -190,7 +191,7 @@ export function EventSheet({
               </TouchableOpacity>
             </View>
           </View>
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.body} showsVerticalScrollIndicator={false} scrollEnabled={!pickerActive}>
             <Text style={[styles.label, { color: theme.colors.textSub }]}>标题</Text>
             {isEditable ? (
               <TextInput
@@ -249,25 +250,29 @@ export function EventSheet({
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>开始时间</Text>
             {isEditable ? (
-              <DateTimePicker
-                value={startTime}
-                onChange={setStartTime}
-                theme={theme}
-                minimumHour={6}
-              />
+              <View onTouchStart={() => setPickerActive(true)} onTouchEnd={() => setPickerActive(false)}>
+                <DateTimePicker
+                  value={startTime}
+                  onChange={setStartTime}
+                  theme={theme}
+                  minimumHour={6}
+                />
+              </View>
             ) : (
               <Text style={[styles.value, { color: theme.colors.textMain }]}>{formatDateTime(startTime)}</Text>
             )}
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>结束时间</Text>
             {isEditable ? (
-              <DateTimePicker
-                value={endTime}
-                onChange={setEndTime}
-                theme={theme}
-                minimumHour={6}
-                allowMidnight24
-              />
+              <View onTouchStart={() => setPickerActive(true)} onTouchEnd={() => setPickerActive(false)}>
+                <DateTimePicker
+                  value={endTime}
+                  onChange={setEndTime}
+                  theme={theme}
+                  minimumHour={6}
+                  allowMidnight24
+                />
+              </View>
             ) : (
               <Text style={[styles.value, { color: theme.colors.textMain }]}>{formatDateTime(endTime)}</Text>
             )}
