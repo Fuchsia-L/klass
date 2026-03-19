@@ -1,5 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { Alert, View, Text, StyleSheet, TouchableOpacity, LayoutAnimation, UIManager, Platform } from 'react-native';
+
+if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
 import { ClipboardList, Plus } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
 import { TodoItem, TodoType, TODO_TYPE_LABELS, PRIORITY_ORDER } from '../types';
@@ -24,7 +26,11 @@ export function TodoSection({ todos, loading }: Props) {
     () =>
       todos
         .filter((t) => t.type === activeTab)
-        .sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]),
+        .sort((a, b) => {
+          const priorityDiff = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+          if (priorityDiff !== 0) return priorityDiff;
+          return Number(a.is_completed) - Number(b.is_completed);
+        }),
     [todos, activeTab],
   );
 
@@ -102,7 +108,10 @@ export function TodoSection({ todos, loading }: Props) {
           <TodoItemCard
             key={todo.id}
             todo={todo}
-            onToggle={() => toggleTodoComplete(todo.id)}
+            onToggle={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              toggleTodoComplete(todo.id);
+            }}
             onPress={() => openDetail(todo)}
             onDelete={() => confirmDelete(todo)}
           />
