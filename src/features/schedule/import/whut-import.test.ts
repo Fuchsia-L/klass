@@ -173,7 +173,7 @@ describe('WHUT import persistence', () => {
         start_date: '2026-02-23',
         total_weeks: 18,
       },
-    } as const;
+    };
 
     await importWhutArrangedList(payload);
     const firstImportEvents = (await loadEvents()).filter((event) => event.source === 'whut-import');
