@@ -39,6 +39,17 @@ export interface WhutArrangedScheduleItem {
   notes?: string;
 }
 
+export interface WhutArrangedScheduleItemRaw {
+  courseName: string;
+  dayOfWeek: number | `${number}`;
+  beginSection: number | `${number}`;
+  endSection: number | `${number}`;
+  week: string;
+  placeName?: string;
+  teacher?: string;
+  weeksAndTeachers?: string;
+}
+
 export interface WhutCourseScheduleItemRaw {
   kcmc: string;
   xqj: number | `${number}`;
@@ -53,7 +64,8 @@ export interface WhutCourseScheduleItemRaw {
 
 export interface WhutCourseTableResponseRaw {
   xnxqdm?: string;
-  kbList: WhutCourseScheduleItemRaw[];
+  kbList?: WhutCourseScheduleItemRaw[];
+  arrangedList?: WhutArrangedScheduleItemRaw[];
 }
 
 export function normalizeRawScheduleItem(
@@ -68,4 +80,33 @@ export function normalizeRawScheduleItem(
     location: raw.cdmc ?? raw.jxcdmc,
     teacher: raw.jsxx,
   };
+}
+
+export function normalizeArrangedScheduleItem(
+  raw: WhutArrangedScheduleItemRaw,
+): WhutArrangedScheduleItem {
+  return {
+    courseName: raw.courseName,
+    dayOfWeek: raw.dayOfWeek,
+    beginSection: raw.beginSection,
+    endSection: raw.endSection,
+    week: raw.week,
+    location: raw.placeName,
+    teacher: raw.teacher,
+    notes: raw.weeksAndTeachers,
+  };
+}
+
+export function extractArrangedScheduleItems(
+  scheduleDetail: WhutCourseTableResponseRaw,
+): WhutArrangedScheduleItem[] {
+  if (Array.isArray(scheduleDetail.arrangedList)) {
+    return scheduleDetail.arrangedList.map(normalizeArrangedScheduleItem);
+  }
+
+  if (Array.isArray(scheduleDetail.kbList)) {
+    return scheduleDetail.kbList.map(normalizeRawScheduleItem);
+  }
+
+  return [];
 }

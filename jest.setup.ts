@@ -11,16 +11,28 @@ jest.mock(
   () => {
     const React = require('react');
     const { View } = require('react-native');
+    const injectJavaScriptMock = jest.fn();
+    const reloadMock = jest.fn();
 
     const MockWebView = React.forwardRef(
-      ({ testID = 'mock-webview', ...props }: ViewProps & { testID?: string }, ref: ForwardedRef<any>) =>
-        React.createElement(View, { ...props, ref, testID }),
+      ({ testID = 'mock-webview', ...props }: ViewProps & { testID?: string }, ref: ForwardedRef<any>) => {
+        React.useImperativeHandle(ref, () => ({
+          injectJavaScript: injectJavaScriptMock,
+          reload: reloadMock,
+        }));
+
+        return React.createElement(View, { ...props, testID });
+      },
     );
 
     MockWebView.displayName = 'MockWebView';
 
     return {
       __esModule: true,
+      __mock: {
+        injectJavaScriptMock,
+        reloadMock,
+      },
       default: MockWebView,
       WebView: MockWebView,
     };

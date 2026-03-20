@@ -8,6 +8,9 @@ import {
   View,
 } from 'react-native';
 import { useTheme } from '../../../theme/ThemeContext';
+import { SemesterConfig } from '../types';
+import { WhutCourseTableResponseRaw } from './contracts';
+import { WhutImportWebViewContainer } from './WhutImportWebViewContainer';
 
 export type WhutImportStatus = 'idle' | 'waiting-login' | 'syncing' | 'success' | 'error';
 
@@ -15,7 +18,14 @@ type WhutImportModalProps = {
   visible: boolean;
   status: WhutImportStatus;
   errorMessage?: string;
+  semesterConfig?: Pick<SemesterConfig, 'start_date' | 'total_weeks'>;
   onBeginImport: () => void;
+  onImportError: (message: string) => void;
+  onImportStatusChange: (status: WhutImportStatus) => void;
+  onScheduleDetailReady: (payload: {
+    termCode: string;
+    scheduleDetail: WhutCourseTableResponseRaw;
+  }) => void | Promise<void>;
   onRequestClose: () => void;
 };
 
@@ -26,15 +36,15 @@ const STATUS_COPY: Record<WhutImportStatus, { title: string; description: string
   },
   'waiting-login': {
     title: '等待登录武汉理工教务系统',
-    description: 'WebView 登录流程将在下一阶段接入，这里预留状态与回调容器。',
+    description: '请在内嵌登录页完成统一认证，成功跳转后会自动建立会话。',
   },
   syncing: {
     title: '正在同步课表数据',
-    description: '正在建立会话并准备拉取课表，请稍候。',
+    description: '正在建立会话、解析学期并拉取结构化课表数据。',
   },
   success: {
     title: '导入成功',
-    description: '课表数据已完成同步，下一阶段将写入本地日程。',
+    description: '课表数据已同步并写入本地日程。',
   },
   error: {
     title: '导入失败',
@@ -46,11 +56,18 @@ export function WhutImportModal({
   visible,
   status,
   errorMessage,
+  semesterConfig,
   onBeginImport,
+  onImportError,
+  onImportStatusChange,
+  onScheduleDetailReady,
   onRequestClose,
 }: WhutImportModalProps) {
   const theme = useTheme();
   const statusCopy = STATUS_COPY[status];
+  const showWebView = Boolean(
+    semesterConfig?.start_date && (status === 'waiting-login' || status === 'syncing'),
+  );
 
   if (!visible) {
     return null;
@@ -109,7 +126,7 @@ export function WhutImportModal({
           >
             <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>导入说明</Text>
             <Text style={[styles.bodyText, { color: theme.colors.textSub }]}>
-              当前阶段先完成设置页入口、导入容器与状态管理，后续再接入登录页与课表同步逻辑。
+              登录完成后会自动检测教务会话，解析学期编码，并通过接口拉取结构化课表明细。
             </Text>
           </View>
 
@@ -146,6 +163,21 @@ export function WhutImportModal({
                 <ActivityIndicator color={theme.colors.primary} testID="whut-import-loading" />
                 <Text style={[styles.loadingText, { color: theme.colors.textMain }]}>同步中...</Text>
               </View>
+            ) : null}
+
+            {showWebView ? (
+              <WhutImportWebViewContainer
+                enabled={showWebView}
+                onError={(message) => {
+                  onImportStatusChange('error');
+                  onImportError(message);
+                }}
+                onLoggedIn={() => {
+                  onImportStatusChange('syncing');
+                }}
+                onScheduleDetailReady={onScheduleDetailReady}
+                semesterStartDate={semesterConfig?.start_date ?? ''}
+              />
             ) : (
               <View
                 style={[
@@ -158,7 +190,7 @@ export function WhutImportModal({
               >
                 <Text style={[styles.placeholderText, { color: theme.colors.textSub }]}>
                   {status === 'waiting-login'
-                    ? '这里将承载教务系统登录 WebView 与登录成功回调。'
+                    ? '点击“继续导入”后将在这里打开教务系统登录页。'
                     : '这里将展示登录态、同步进度与结果摘要。'}
                 </Text>
               </View>

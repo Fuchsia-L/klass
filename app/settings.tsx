@@ -13,6 +13,7 @@ import { AppBar } from '../src/shared/components/AppBar';
 import { useTheme } from '../src/theme/ThemeContext';
 import { THEME_OPTIONS, getTheme } from '../src/theme';
 import { useSettingsForm } from '../src/features/settings';
+import { extractArrangedScheduleItems, importWhutArrangedList } from '../src/features/schedule';
 import { WhutImportModal, WhutImportStatus } from '../src/features/schedule/import/WhutImportModal';
 
 const PREVIEW_COLORS: Array<keyof ReturnType<typeof getTheme>['colors']> = [
@@ -81,6 +82,34 @@ export default function SettingsScreen() {
     setHasStartedImport(true);
     setImportStatus('waiting-login');
   };
+
+  const handleScheduleDetailReady = React.useCallback(
+    async ({ scheduleDetail }: { scheduleDetail: Parameters<typeof extractArrangedScheduleItems>[0] }) => {
+      try {
+        const arrangedList = extractArrangedScheduleItems(scheduleDetail);
+
+        if (arrangedList.length === 0) {
+          throw new Error('课表接口未返回任何可导入的排课记录。');
+        }
+
+        await importWhutArrangedList({
+          arrangedList,
+          semesterConfig: {
+            start_date: form.semesterStart.trim(),
+            total_weeks: Number.parseInt(form.totalWeeks.trim(), 10) || 30,
+          },
+        });
+
+        setImportErrorMessage('');
+        setImportStatus('success');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '导入课表失败，请稍后重试。';
+        setImportStatus('error');
+        setImportErrorMessage(message);
+      }
+    },
+    [form.semesterStart, form.totalWeeks],
+  );
 
   const handleRequestCloseImportModal = () => {
     if (!hasStartedImport || importStatus === 'success' || importStatus === 'error') {
@@ -344,7 +373,14 @@ export default function SettingsScreen() {
       <WhutImportModal
         errorMessage={importErrorMessage}
         onBeginImport={handleBeginImport}
+        onImportError={(message) => setImportErrorMessage(message)}
+        onImportStatusChange={setImportStatus}
+        onScheduleDetailReady={handleScheduleDetailReady}
         onRequestClose={handleRequestCloseImportModal}
+        semesterConfig={{
+          start_date: form.semesterStart.trim(),
+          total_weeks: Number.parseInt(form.totalWeeks.trim(), 10) || 30,
+        }}
         status={importStatus}
         visible={isImportModalVisible}
       />

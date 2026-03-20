@@ -143,21 +143,29 @@ describe('WhutImportModal state rendering', () => {
     const onRequestClose = jest.fn();
     const { getByText, getByTestId, rerender } = render(
       <WhutImportModal
+        semesterConfig={{ start_date: '2026-02-23', total_weeks: 18 }}
         visible
         status="waiting-login"
         onBeginImport={onBeginImport}
+        onImportError={jest.fn()}
+        onImportStatusChange={jest.fn()}
+        onScheduleDetailReady={jest.fn()}
         onRequestClose={onRequestClose}
       />,
     );
 
     expect(getByText('等待登录武汉理工教务系统')).toBeTruthy();
-    expect(getByText('这里将承载教务系统登录 WebView 与登录成功回调。')).toBeTruthy();
+    expect(getByText('登录与同步状态')).toBeTruthy();
 
     rerender(
       <WhutImportModal
+        semesterConfig={{ start_date: '2026-02-23', total_weeks: 18 }}
         visible
         status="syncing"
         onBeginImport={onBeginImport}
+        onImportError={jest.fn()}
+        onImportStatusChange={jest.fn()}
+        onScheduleDetailReady={jest.fn()}
         onRequestClose={onRequestClose}
       />,
     );
@@ -167,9 +175,13 @@ describe('WhutImportModal state rendering', () => {
 
     rerender(
       <WhutImportModal
+        semesterConfig={{ start_date: '2026-02-23', total_weeks: 18 }}
         visible
         status="success"
         onBeginImport={onBeginImport}
+        onImportError={jest.fn()}
+        onImportStatusChange={jest.fn()}
+        onScheduleDetailReady={jest.fn()}
         onRequestClose={onRequestClose}
       />,
     );
@@ -178,10 +190,14 @@ describe('WhutImportModal state rendering', () => {
 
     rerender(
       <WhutImportModal
+        semesterConfig={{ start_date: '2026-02-23', total_weeks: 18 }}
         visible
         status="error"
         errorMessage="导入失败，请稍后重试。"
         onBeginImport={onBeginImport}
+        onImportError={jest.fn()}
+        onImportStatusChange={jest.fn()}
+        onScheduleDetailReady={jest.fn()}
         onRequestClose={onRequestClose}
       />,
     );
