@@ -14,6 +14,7 @@ export {
   saveSemester,
 } from './services';
 export { loadSemesterConfig, saveSemesterConfig } from './storage';
+export { getCategoryColor } from './categoryColors';
 export * from './import/contracts';
 export * from './import/whut-import';
 export * from './types';

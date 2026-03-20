@@ -12,8 +12,8 @@ import { useTheme } from '../src/theme/ThemeContext';
 import { AppBar } from '../src/shared/components/AppBar';
 import { FAB } from '../src/shared/components/FAB';
 import {
-  CATEGORIES,
   EventSheet,
+  getCategoryColor,
   MatrixEventBlock,
   MATRIX_HOUR_HEIGHT,
   ScheduleEvent,
@@ -110,7 +110,7 @@ export default function MatrixScreen() {
     const endHour = end.getHours() + end.getMinutes() / 60;
     const top = (startHour - HOUR_START) * HOUR_HEIGHT;
     const height = Math.max((endHour - startHour) * HOUR_HEIGHT, 16);
-    const cat = CATEGORIES[event.category];
+    const categoryColor = getCategoryColor(theme, event.category);
 
     return {
       position: 'absolute' as const,
@@ -118,9 +118,9 @@ export default function MatrixScreen() {
       top,
       width: DAY_COL_WIDTH - 2,
       height,
-      backgroundColor: cat.color + '30',
+      backgroundColor: `${categoryColor}30`,
       borderLeftWidth: 3,
-      borderLeftColor: cat.color,
+      borderLeftColor: categoryColor,
       borderRadius: 4,
       paddingHorizontal: 3,
       paddingVertical: 1,

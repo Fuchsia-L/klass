@@ -4,6 +4,7 @@ import { Clock, MapPin } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
 import { formatTime } from '../../../shared/lib/date';
 import { CATEGORIES, ScheduleEvent } from '../types';
+import { getCategoryColor } from '../categoryColors';
 
 interface EventCardProps {
   event: ScheduleEvent;
@@ -13,6 +14,7 @@ interface EventCardProps {
 export function EventCard({ event, onPress }: EventCardProps) {
   const theme = useTheme();
   const category = CATEGORIES[event.category];
+  const categoryColor = getCategoryColor(theme, event.category);
   const start = new Date(event.start_time);
   const end = new Date(event.end_time);
 
@@ -20,17 +22,21 @@ export function EventCard({ event, onPress }: EventCardProps) {
     <TouchableOpacity
       activeOpacity={0.7}
       onPress={onPress}
+      testID={`event-card-${event.id}`}
       style={[
         styles.container,
         {
-          backgroundColor: theme.colors.card,
+          backgroundColor: `${categoryColor}18`,
           borderRadius: theme.radius.card,
-          borderColor: theme.colors.cardBorder,
+          borderColor: `${categoryColor}55`,
           opacity: event.is_completed ? 0.5 : 1,
         },
       ]}
     >
-      <View style={[styles.categoryBar, { backgroundColor: category.color }]} />
+      <View
+        testID={`event-card-category-bar-${event.id}`}
+        style={[styles.categoryBar, { backgroundColor: categoryColor }]}
+      />
       <View style={styles.content}>
         <View style={styles.header}>
           <Text
@@ -45,7 +51,12 @@ export function EventCard({ event, onPress }: EventCardProps) {
           >
             {event.title}
           </Text>
-          <Text style={[styles.categoryLabel, { color: category.color }]}>{category.label}</Text>
+          <Text
+            testID={`event-card-category-label-${event.id}`}
+            style={[styles.categoryLabel, { color: categoryColor }]}
+          >
+            {category.label}
+          </Text>
         </View>
         <View style={styles.meta}>
           <Clock size={12} color={theme.colors.textSub} />

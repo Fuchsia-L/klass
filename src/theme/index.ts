@@ -3,6 +3,8 @@ import { cyberTheme } from './cyber';
 import { minimalTheme } from './minimal';
 import { sakuraTheme } from './sakura';
 import { midnightTheme } from './midnight';
+import { hanamiTheme } from './hanami';
+import { oceanTheme } from './ocean';
 
 export type { ThemeConfig };
 export type ThemeName = string;
@@ -14,6 +16,8 @@ const themes: Record<string, ThemeConfig> = {
   minimal: minimalTheme,
   sakura: sakuraTheme,
   midnight: midnightTheme,
+  hanami: hanamiTheme,
+  ocean: oceanTheme,
 };
 
 export const THEME_OPTIONS: Array<{ name: string; label: string }> = Object.values(themes).map(
@@ -32,4 +36,4 @@ export function getAllThemes(): Record<string, ThemeConfig> {
   return themes;
 }
 
-export { cyberTheme, minimalTheme, sakuraTheme, midnightTheme };
+export { cyberTheme, minimalTheme, sakuraTheme, midnightTheme, hanamiTheme, oceanTheme };

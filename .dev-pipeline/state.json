@@ -3,9 +3,9 @@
   "requirement": "三个功能改进：\n\n## 1. Matrix 周视图课表卡片空间利用率优化\n当前问题：卡片标题被截断显示为'高等...'，但卡片底部有大量空白空间没利用。\n改进：\n- 标题允许换行（而非单行截断），充分利用卡片高度显示完整课程名\n- 如果显示完标题后仍有空间，且该事件有 location 字段，则在标题下方追加显示位置信息（字体更小、颜色更淡）\n- 保持卡片紧凑感，不要因为换行导致其他布局问题\n\n## 2. FAB 浮动按钮可拖动\n当前：右下角固定位置的圆形'+'按钮(FAB)\n改进：\n- FAB 按钮支持手指拖动到屏幕任意位置\n- 拖动结束后吸附到最近的屏幕边缘（左/右）\n- 记住位置（组件内 state 即可，不需要持久化）\n- 拖动时有轻微的透明度变化反馈\n- 短按仍然触发原有的新建事件功能，拖动不触发点击\n\n## 3. 新增两个精致主题（保留原有4个主题不变）\n新增主题要求：\n- 主题5：'Sakura'——樱花粉系，春天气息，温暖柔和\n- 主题6：'Ocean'——深海蓝系，冷色调，沉稳专业\n- 每个主题需要完整定义所有 theme colors（bg, card, cardBorder, primary, accent, success, danger, warning, textMain, textSub, inputBg, divider 等）\n- 关键：不同事件类别（学习、工作、生活等 CATEGORIES）在课表矩阵中要有各自的颜色，但在同一主题下保持色调和谐统一，不要太割裂\n- 参考现有主题的 ThemeConfig 结构，确保新主题所有字段齐全\n- 课表卡片（EventCard/Matrix 里的）要使用事件类别对应的颜色而非统一的 card 背景色\n\n注意：\n- 现有的4个主题（default/dark/nord/solarized 或类似）完全保持不变\n- 只新增 Sakura 和 Ocean 两个\n- THEME_OPTIONS 数组要同步更新",
   "workdir": "D:\\_PROJECTS\\cyberschedule-rn",
   "createdAt": "2026-03-20T12:58:24.930Z",
-  "updatedAt": "2026-03-20T13:18:30.052Z",
+  "updatedAt": "2026-03-20T13:27:54.463Z",
   "status": "in-progress",
-  "currentPhase": 2,
+  "currentPhase": 3,
   "plan": {
     "projectName": "matrix-fab-theme-enhancements",
     "summary": "Deliver the three requested improvements in three sequential phases that align directly with the product scope: first optimize matrix week-view card density and readability with explicit height-based text rules, then make the FAB draggable using React Native's built-in Animated plus PanResponder so no new animation dependency is required, and finally add the two new themes while introducing optional theme tokens and theme-aware category colors for matrix/event cards. This decomposition resolves the prior review issues by merging the thin theme-type work into the theme phase, choosing a concrete drag implementation, defining explicit pixel thresholds from HOUR_HEIGHT=60, and avoiding the existing sakura naming collision by using internal id hanami with user-facing label Sakura 桜 while keeping the original four themes unchanged.",
@@ -88,6 +88,13 @@
       "testFixCycles": 1,
       "startedAt": "2026-03-20T13:11:47.527Z",
       "completedAt": "2026-03-20T13:18:30.050Z"
+    },
+    "2": {
+      "status": "completed",
+      "reviewCycles": 1,
+      "testFixCycles": 1,
+      "startedAt": "2026-03-20T13:18:30.052Z",
+      "completedAt": "2026-03-20T13:27:54.462Z"
     }
   },
   "finalReview": null,
@@ -137,6 +144,18 @@
     {
       "timestamp": "2026-03-20T13:18:29.851Z",
       "step": "phase-1-review",
+      "message": "Claude review cycle 1",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-20T13:26:23.187Z",
+      "step": "phase-2-implement",
+      "message": "Codex implementation",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-20T13:27:54.301Z",
+      "step": "phase-2-review",
       "message": "Claude review cycle 1",
       "ok": true
     }

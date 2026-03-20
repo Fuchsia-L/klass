@@ -1,3 +1,5 @@
+import type { CategoryKey } from '../features/schedule/types';
+
 export interface ThemeConfig {
   id: string;
   name: string;
@@ -9,6 +11,7 @@ export interface ThemeConfig {
     accent: string;
     success: string;
     danger: string;
+    warning?: string;
     textMain: string;
     textSub: string;
     overlay: string;
@@ -18,6 +21,7 @@ export interface ThemeConfig {
     priorityMedium: string;
     priorityLow: string;
   };
+  categoryColors?: Partial<Record<CategoryKey, string>>;
   fonts: {
     heading: string;
     body: string;
