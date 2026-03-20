@@ -13,7 +13,11 @@ import { AppBar } from '../src/shared/components/AppBar';
 import { useTheme } from '../src/theme/ThemeContext';
 import { THEME_OPTIONS, getTheme } from '../src/theme';
 import { useSettingsForm } from '../src/features/settings';
-import { extractArrangedScheduleItems, importWhutArrangedList } from '../src/features/schedule';
+import {
+  extractArrangedScheduleItems,
+  importWhutArrangedList,
+  WhutCourseTableResponseRaw,
+} from '../src/features/schedule';
 import { WhutImportModal, WhutImportStatus } from '../src/features/schedule/import/WhutImportModal';
 
 const PREVIEW_COLORS: Array<keyof ReturnType<typeof getTheme>['colors']> = [
@@ -29,7 +33,10 @@ export default function SettingsScreen() {
   const [isImportModalVisible, setImportModalVisible] = React.useState(false);
   const [importStatus, setImportStatus] = React.useState<WhutImportStatus>('idle');
   const [importErrorMessage, setImportErrorMessage] = React.useState('');
+  const [importedCount, setImportedCount] = React.useState<number | undefined>(undefined);
+  const [importedTermCode, setImportedTermCode] = React.useState<string | undefined>(undefined);
   const [hasStartedImport, setHasStartedImport] = React.useState(false);
+  const importGenerationRef = React.useRef(0);
   const {
     form,
     loading,
@@ -58,9 +65,12 @@ export default function SettingsScreen() {
   };
 
   const resetImportState = React.useCallback(() => {
+    importGenerationRef.current += 1;
     setImportModalVisible(false);
     setImportStatus('idle');
     setImportErrorMessage('');
+    setImportedCount(undefined);
+    setImportedTermCode(undefined);
     setHasStartedImport(false);
   }, []);
 
@@ -68,23 +78,36 @@ export default function SettingsScreen() {
     setImportModalVisible(true);
     setImportStatus('idle');
     setImportErrorMessage('');
+    setImportedCount(undefined);
+    setImportedTermCode(undefined);
     setHasStartedImport(false);
   };
 
-  const handleBeginImport = () => {
+  const handleBeginImport = React.useCallback(() => {
     if (!form.semesterStart.trim()) {
       setImportStatus('idle');
       setImportErrorMessage('请先填写学期开始日期，再导入武汉理工课表。');
       return;
     }
 
+    importGenerationRef.current += 1;
     setImportErrorMessage('');
+    setImportedCount(undefined);
+    setImportedTermCode(undefined);
     setHasStartedImport(true);
     setImportStatus('waiting-login');
-  };
+  }, [form.semesterStart]);
 
   const handleScheduleDetailReady = React.useCallback(
-    async ({ scheduleDetail }: { scheduleDetail: Parameters<typeof extractArrangedScheduleItems>[0] }) => {
+    async ({
+      termCode,
+      scheduleDetail,
+    }: {
+      termCode: string;
+      scheduleDetail: WhutCourseTableResponseRaw;
+    }) => {
+      const importGeneration = importGenerationRef.current;
+
       try {
         const arrangedList = extractArrangedScheduleItems(scheduleDetail);
 
@@ -92,7 +115,7 @@ export default function SettingsScreen() {
           throw new Error('课表接口未返回任何可导入的排课记录。');
         }
 
-        await importWhutArrangedList({
+        const importedEvents = await importWhutArrangedList({
           arrangedList,
           semesterConfig: {
             start_date: form.semesterStart.trim(),
@@ -100,10 +123,22 @@ export default function SettingsScreen() {
           },
         });
 
+        if (importGeneration !== importGenerationRef.current) {
+          return;
+        }
+
         setImportErrorMessage('');
+        setImportedCount(importedEvents.length);
+        setImportedTermCode(termCode);
         setImportStatus('success');
       } catch (error) {
+        if (importGeneration !== importGenerationRef.current) {
+          return;
+        }
+
         const message = error instanceof Error ? error.message : '导入课表失败，请稍后重试。';
+        setImportedCount(undefined);
+        setImportedTermCode(undefined);
         setImportStatus('error');
         setImportErrorMessage(message);
       }
@@ -372,6 +407,8 @@ export default function SettingsScreen() {
 
       <WhutImportModal
         errorMessage={importErrorMessage}
+        importedCount={importedCount}
+        importedTermCode={importedTermCode}
         onBeginImport={handleBeginImport}
         onImportError={(message) => setImportErrorMessage(message)}
         onImportStatusChange={setImportStatus}

@@ -18,6 +18,8 @@ type WhutImportModalProps = {
   visible: boolean;
   status: WhutImportStatus;
   errorMessage?: string;
+  importedCount?: number;
+  importedTermCode?: string;
   semesterConfig?: Pick<SemesterConfig, 'start_date' | 'total_weeks'>;
   onBeginImport: () => void;
   onImportError: (message: string) => void;
@@ -29,33 +31,48 @@ type WhutImportModalProps = {
   onRequestClose: () => void;
 };
 
-const STATUS_COPY: Record<WhutImportStatus, { title: string; description: string }> = {
-  idle: {
-    title: '准备开始导入',
-    description: '确认学期配置后，即可进入武汉理工教务系统登录流程。',
-  },
-  'waiting-login': {
-    title: '等待登录武汉理工教务系统',
-    description: '请在内嵌登录页完成统一认证，成功跳转后会自动建立会话。',
-  },
-  syncing: {
-    title: '正在同步课表数据',
-    description: '正在建立会话、解析学期并拉取结构化课表数据。',
-  },
-  success: {
-    title: '导入成功',
-    description: '课表数据已同步并写入本地日程。',
-  },
-  error: {
-    title: '导入失败',
-    description: '登录或同步过程中出现问题，请检查后重试。',
-  },
-};
+function getStatusCopy(status: WhutImportStatus, importedCount?: number, importedTermCode?: string) {
+  if (status === 'success') {
+    const countText = typeof importedCount === 'number' ? `${importedCount} 条课程事件` : '课表数据';
+    const termText = importedTermCode ? `${importedTermCode} 学期的` : '';
+
+    return {
+      title: '导入成功',
+      description: `已同步 ${termText}${countText} 并写入本地日程，关闭后返回首页或矩阵页即可查看；你也可以稍后再关闭此窗口。`,
+    };
+  }
+
+  if (status === 'error') {
+    return {
+      title: '导入失败',
+      description: '登录或同步过程中出现问题，可直接点击“重试导入”继续当前会话。',
+    };
+  }
+
+  const statusCopyMap: Record<Exclude<WhutImportStatus, 'success' | 'error'>, { title: string; description: string }> = {
+    idle: {
+      title: '准备开始导入',
+      description: '确认学期配置后，即可进入武汉理工教务系统登录流程。',
+    },
+    'waiting-login': {
+      title: '等待登录武汉理工教务系统',
+      description: '请在内嵌登录页完成统一认证，成功跳转后会自动建立会话。',
+    },
+    syncing: {
+      title: '正在同步课表数据',
+      description: '正在建立会话、解析学期并拉取结构化课表数据。',
+    },
+  };
+
+  return statusCopyMap[status];
+}
 
 export function WhutImportModal({
   visible,
   status,
   errorMessage,
+  importedCount,
+  importedTermCode,
   semesterConfig,
   onBeginImport,
   onImportError,
@@ -64,10 +81,28 @@ export function WhutImportModal({
   onRequestClose,
 }: WhutImportModalProps) {
   const theme = useTheme();
-  const statusCopy = STATUS_COPY[status];
+  const statusCopy = getStatusCopy(status, importedCount, importedTermCode);
+  const semesterStartDate = semesterConfig?.start_date?.trim() ?? '';
   const showWebView = Boolean(
-    semesterConfig?.start_date && (status === 'waiting-login' || status === 'syncing'),
+    semesterStartDate && (status === 'waiting-login' || status === 'syncing'),
   );
+  const primaryActionLabel =
+    status === 'success' ? '完成并关闭' : status === 'error' ? '重试导入' : '继续导入';
+  const handlePrimaryAction = React.useCallback(() => {
+    if (status === 'success') {
+      onRequestClose();
+      return;
+    }
+
+    if (!semesterStartDate) {
+      onImportStatusChange('idle');
+      onImportError('请先填写学期开始日期，再导入武汉理工课表。');
+      return;
+    }
+
+    onBeginImport();
+  }, [onBeginImport, onImportError, onImportStatusChange, onRequestClose, semesterStartDate, status]);
+  const isPrimaryActionDisabled = status === 'syncing' || status === 'waiting-login';
 
   if (!visible) {
     return null;
@@ -158,6 +193,25 @@ export function WhutImportModal({
             <Text style={[styles.statusTitle, { color: theme.colors.textMain }]}>{statusCopy.title}</Text>
             <Text style={[styles.bodyText, { color: theme.colors.textSub }]}>{statusCopy.description}</Text>
 
+            {status === 'success' && typeof importedCount === 'number' ? (
+              <View
+                style={[
+                  styles.resultBox,
+                  {
+                    backgroundColor: theme.colors.inputBg,
+                    borderColor: theme.colors.success,
+                  },
+                ]}
+                testID="whut-import-success-summary"
+              >
+                <Text style={[styles.resultTitle, { color: theme.colors.success }]}>导入结果</Text>
+                <Text style={[styles.bodyText, { color: theme.colors.textMain }]}>本次共导入 {importedCount} 条课程事件。</Text>
+                {importedTermCode ? (
+                  <Text style={[styles.resultMeta, { color: theme.colors.textSub }]}>学期：{importedTermCode}</Text>
+                ) : null}
+              </View>
+            ) : null}
+
             {status === 'syncing' ? (
               <View style={styles.loadingRow}>
                 <ActivityIndicator color={theme.colors.primary} testID="whut-import-loading" />
@@ -176,7 +230,7 @@ export function WhutImportModal({
                   onImportStatusChange('syncing');
                 }}
                 onScheduleDetailReady={onScheduleDetailReady}
-                semesterStartDate={semesterConfig?.start_date ?? ''}
+                semesterStartDate={semesterStartDate}
               />
             ) : (
               <View
@@ -223,22 +277,19 @@ export function WhutImportModal({
 
           <TouchableOpacity
             accessibilityRole="button"
-            disabled={status === 'syncing' || status === 'success' || status === 'waiting-login'}
-            onPress={onBeginImport}
+            disabled={isPrimaryActionDisabled}
+            onPress={handlePrimaryAction}
             activeOpacity={0.9}
             style={[
               styles.primaryAction,
               {
-                backgroundColor:
-                  status === 'syncing' || status === 'success' || status === 'waiting-login'
-                    ? theme.colors.divider
-                    : theme.colors.primary,
-                opacity: status === 'syncing' || status === 'success' || status === 'waiting-login' ? 0.7 : 1,
+                backgroundColor: isPrimaryActionDisabled ? theme.colors.divider : theme.colors.primary,
+                opacity: isPrimaryActionDisabled ? 0.7 : 1,
               },
             ]}
             testID="whut-import-begin-button"
           >
-            <Text style={[styles.primaryActionText, { color: theme.colors.bg }]}>继续导入</Text>
+            <Text style={[styles.primaryActionText, { color: theme.colors.bg }]}>{primaryActionLabel}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -328,6 +379,19 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  resultBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  resultTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  resultMeta: {
+    fontSize: 12,
   },
   errorBox: {
     borderWidth: 1,

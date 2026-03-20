@@ -156,6 +156,98 @@ describe('WHUT import persistence', () => {
     clearEventsCache();
   });
 
+  it('keeps whut-import event count stable across repeated imports of the same payload', async () => {
+    const payload = {
+      arrangedList: [
+        {
+          courseName: '数据库系统',
+          dayOfWeek: 3,
+          beginSection: 1,
+          endSection: 2,
+          week: '101000000000000000000000000000',
+          location: '南湖综合楼',
+          teacher: '黄老师',
+        },
+      ],
+      semesterConfig: {
+        start_date: '2026-02-23',
+        total_weeks: 18,
+      },
+    } as const;
+
+    await importWhutArrangedList(payload);
+    const firstImportEvents = (await loadEvents()).filter((event) => event.source === 'whut-import');
+    await importWhutArrangedList(payload);
+
+    const storedEvents = await loadEvents();
+    const importedEvents = storedEvents.filter((event) => event.source === 'whut-import');
+
+    expect(importedEvents).toHaveLength(2);
+    expect(importedEvents.every((event) => !firstImportEvents.some((previous) => previous.id === event.id))).toBe(true);
+  });
+
+  it('deduplicates identical class occurrences within a single imported payload', async () => {
+    const importedEvents = await importWhutArrangedList({
+      arrangedList: [
+        {
+          courseName: '计算机网络',
+          dayOfWeek: 4,
+          beginSection: 3,
+          endSection: 4,
+          week: '100000000000000000000000000000',
+          location: '鉴湖教学楼',
+          teacher: '陈老师',
+        },
+        {
+          courseName: '计算机网络',
+          dayOfWeek: 4,
+          beginSection: 3,
+          endSection: 4,
+          week: '100000000000000000000000000000',
+          location: '鉴湖教学楼',
+          teacher: '陈老师',
+        },
+      ],
+      semesterConfig: {
+        start_date: '2026-02-23',
+        total_weeks: 18,
+      },
+    });
+
+    expect(importedEvents).toHaveLength(1);
+  });
+
+  it('does not collapse distinct events when title or location contains delimiter-like text', async () => {
+    const importedEvents = await importWhutArrangedList({
+      arrangedList: [
+        {
+          courseName: '计算机组成原理',
+          dayOfWeek: 4,
+          beginSection: 3,
+          endSection: 4,
+          week: '100000000000000000000000000000',
+          location: '鉴湖教学楼::A101',
+          teacher: '陈老师',
+        },
+        {
+          courseName: '计算机组成原理::鉴湖教学楼',
+          dayOfWeek: 4,
+          beginSection: 3,
+          endSection: 4,
+          week: '100000000000000000000000000000',
+          location: 'A101',
+          teacher: '陈老师',
+        },
+      ],
+      semesterConfig: {
+        start_date: '2026-02-23',
+        total_weeks: 18,
+      },
+    });
+
+    expect(importedEvents).toHaveLength(2);
+  });
+
   it('replaces previous whut-import events while preserving manual events', async () => {
     const existingManualEvent: ScheduleEvent = {
       id: 'manual-1',

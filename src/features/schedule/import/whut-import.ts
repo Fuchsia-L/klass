@@ -98,6 +98,25 @@ function buildNotes(item: WhutArrangedScheduleItem, weeks: number[]): string | u
   return lines.length > 0 ? lines.join('\n') : undefined;
 }
 
+function buildImportedEventFingerprint(event: Pick<ScheduleEvent, 'title' | 'start_time' | 'end_time' | 'location'>): string {
+  return JSON.stringify([event.title, event.start_time, event.end_time, event.location ?? '']);
+}
+
+function dedupeImportedEvents(events: ScheduleEvent[]): ScheduleEvent[] {
+  const seenFingerprints = new Set<string>();
+
+  return events.filter((event) => {
+    const fingerprint = buildImportedEventFingerprint(event);
+
+    if (seenFingerprints.has(fingerprint)) {
+      return false;
+    }
+
+    seenFingerprints.add(fingerprint);
+    return true;
+  });
+}
+
 export function convertWhutArrangedListToEvents(options: {
   arrangedList: WhutArrangedScheduleItem[];
   semesterConfig: Pick<SemesterConfig, 'start_date' | 'total_weeks'>;
@@ -110,7 +129,7 @@ export function convertWhutArrangedListToEvents(options: {
   } = options;
   const semesterStartDate = parseSemesterStartDate(semesterConfig.start_date);
 
-  return arrangedList.flatMap((item) => {
+  return dedupeImportedEvents(arrangedList.flatMap((item) => {
     const dayOfWeek = toPositiveInteger(item.dayOfWeek, 'dayOfWeek');
     const beginSection = toPositiveInteger(item.beginSection, 'beginSection');
     const endSection = toPositiveInteger(item.endSection, 'endSection');
@@ -141,7 +160,7 @@ export function convertWhutArrangedListToEvents(options: {
         is_completed: false,
       } satisfies ScheduleEvent;
     });
-  });
+  }));
 }
 
 export async function importWhutArrangedList(options: {
