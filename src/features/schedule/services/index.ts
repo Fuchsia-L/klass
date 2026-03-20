@@ -2,6 +2,7 @@ export {
   addEvent,
   deleteEvent,
   loadEvents,
+  replaceImportedEvents,
   resetEventsState,
   subscribeToEvents,
   toggleComplete,

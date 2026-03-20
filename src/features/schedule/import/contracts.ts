@@ -28,6 +28,17 @@ export const WHUT_CLASS_PERIOD_TIME_MAP = {
 
 export type WhutClassPeriod = keyof typeof WHUT_CLASS_PERIOD_TIME_MAP;
 
+export interface WhutArrangedScheduleItem {
+  courseName: string;
+  dayOfWeek: number | `${number}`;
+  beginSection: number | `${number}`;
+  endSection: number | `${number}`;
+  week: string;
+  location?: string;
+  teacher?: string;
+  notes?: string;
+}
+
 export interface WhutCourseScheduleItemRaw {
   kcmc: string;
   xqj: number | `${number}`;
@@ -43,4 +54,18 @@ export interface WhutCourseScheduleItemRaw {
 export interface WhutCourseTableResponseRaw {
   xnxqdm?: string;
   kbList: WhutCourseScheduleItemRaw[];
+}
+
+export function normalizeRawScheduleItem(
+  raw: WhutCourseScheduleItemRaw,
+): WhutArrangedScheduleItem {
+  return {
+    courseName: raw.kcmc,
+    dayOfWeek: raw.xqj,
+    beginSection: raw.ksjc,
+    endSection: raw.jsjc,
+    week: raw.zcd,
+    location: raw.cdmc ?? raw.jxcdmc,
+    teacher: raw.jsxx,
+  };
 }

@@ -3,9 +3,9 @@
   "requirement": "添加课表导入功能：通过 WebView 登录武汉理工大学教务系统（CAS），登录成功后自动拉取课表数据并写入 klass 本地数据库。\n\n技术方案：\n1. 在设置页添加导入课表按钮\n2. 点击后弹出 react-native-webview 加载 CAS 登录页: https://zhlgd.whut.edu.cn/tpass/login?service=https%3A%2F%2Fjwxt.whut.edu.cn%2Fjwapp%2Fsys%2Fhomeapp%2Findex.do%3FforceCas%3D1\n3. 用户在 WebView 里手动登录\n4. 监听 URL 变化，当 URL 包含 jwxt.whut.edu.cn/jwapp/sys/homeapp 时表示登录成功\n5. 等待 5 秒让 JS 建立 session\n6. 注入 JS 调用 API：POST /jwapp/sys/homeapp/api/home/student/getMyScheduleDetail.do (body: termCode=2025-2026-2)\n7. scheduleDetail 返回格式: {datas: {arrangedList: [{courseName, dayOfWeek, beginSection, endSection, placeName, week, weeksAndTeachers, color, ...}]}}\n8. week 字段是 30 位二进制字符串，第 N 位为 1 表示第 N 周有课\n9. 解析后转换为 klass event 格式写入本地存储\n10. 需要安装 react-native-webview: npx expo install react-native-webview",
   "workdir": "D:\\_PROJECTS\\cyberschedule-rn",
   "createdAt": "2026-03-20T05:15:44.638Z",
-  "updatedAt": "2026-03-20T05:31:44.603Z",
+  "updatedAt": "2026-03-20T05:46:38.940Z",
   "status": "in-progress",
-  "currentPhase": 2,
+  "currentPhase": 3,
   "plan": {
     "projectName": "whut-schedule-import",
     "summary": "为 Expo Router 的课表应用新增“武汉理工教务系统导入”能力：在设置页通过内嵌 WebView 打开 CAS 登录页，用户手动登录后识别 jwxt 成功跳转，建立会话并调用课表接口拉取数据；随后把 WHUT 的节次、星期与 30 位周次位图转换为应用现有 `ScheduleEvent` 模型可消费的离散事件，写入本地存储且不误删手动创建的数据。由于当前仓库没有任何测试基础设施、现有事件模型只支持 ISO 时间与简单 repeat，因此需要先补齐测试工具链，并明确导入数据模型、节次时间映射、学期起始日期依赖、termCode 获取策略与导入来源标记。",
@@ -130,6 +130,13 @@
       "testFixCycles": 1,
       "startedAt": "2026-03-20T05:23:06.903Z",
       "completedAt": "2026-03-20T05:31:44.602Z"
+    },
+    "2": {
+      "status": "completed",
+      "reviewCycles": 1,
+      "testFixCycles": 1,
+      "startedAt": "2026-03-20T05:31:44.603Z",
+      "completedAt": "2026-03-20T05:37:58.974Z"
     }
   },
   "finalReview": null,
@@ -167,6 +174,18 @@
     {
       "timestamp": "2026-03-20T05:31:44.429Z",
       "step": "phase-1-review",
+      "message": "Claude review cycle 1",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-20T05:37:09.599Z",
+      "step": "phase-2-implement",
+      "message": "Codex implementation",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-20T05:37:58.788Z",
+      "step": "phase-2-review",
       "message": "Claude review cycle 1",
       "ok": true
     }

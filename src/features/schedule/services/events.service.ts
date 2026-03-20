@@ -31,6 +31,23 @@ export async function loadEvents(): Promise<ScheduleEvent[]> {
   return loadEventsFromStorage();
 }
 
+export async function replaceImportedEvents(importedEvents: ScheduleEvent[]): Promise<void> {
+  importedEvents.forEach((event) => {
+    if (!validateEventTimeWindow(event.start_time, event.end_time)) {
+      throw new Error(`Invalid imported event time window: ${event.title}`);
+    }
+
+    if (event.repeat !== 'none' || event.source !== 'whut-import' || event.is_completed) {
+      throw new Error(`Invalid imported event invariant: ${event.title}`);
+    }
+  });
+
+  const existingEvents = await loadEvents();
+  const preservedEvents = existingEvents.filter((event) => event.source !== 'whut-import');
+
+  await persist([...preservedEvents, ...importedEvents]);
+}
+
 export function subscribeToEvents(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
