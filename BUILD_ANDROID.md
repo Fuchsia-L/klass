@@ -181,6 +181,64 @@ Current behavior:
 
 This warning did not block APK generation in the verified build flow.
 
+### Test files leaking into release bundle (2026-03-20)
+
+Symptom:
+
+- `Android Bundling failed` with `Error: Unable to resolve module console from @testing-library/react-native`
+- Metro bundler resolves `.test.ts` / `.test.tsx` files and follows their imports into test-only dependencies
+
+Cause:
+
+- Pipeline-generated test files (e.g. `*.test.ts`) live inside `src/` alongside production code
+- Metro's default resolver picks them up even though `@testing-library` is in `devDependencies`
+
+Fix:
+
+- Added `metro.config.js` with `blockList` to exclude test files:
+
+```js
+config.resolver.blockList = [
+  /\.test\.[jt]sx?$/,
+  /\/__tests__\//,
+  /\/test\//,
+];
+```
+
+### npm peer dependency conflicts
+
+Symptom:
+
+- `npm install react-native-webview` fails with ERESOLVE peer dependency conflict
+
+Fix:
+
+- Use `npm install react-native-webview --legacy-peer-deps`
+
+### PowerShell exit code misleading
+
+Symptom:
+
+- PowerShell reports `exit code 1` even though Gradle output says `BUILD SUCCESSFUL`
+
+Cause:
+
+- PowerShell treats stderr output (Gradle deprecation warnings) as errors
+
+Fix:
+
+- Always check the last lines of output for `BUILD SUCCESSFUL` / `BUILD FAILED`, don't rely on exit code alone
+
+### Signing (updated 2026-03-20)
+
+Production keystore is now in use:
+
+- File: `android/app/klass-release.keystore`
+- Alias: `klass`
+- Password: `cuvF3OyoReiXlux`
+- CN=Fuchsia L, L=Wuhan
+- SHA-256: `da4317c7ce8320971df386171d62cf9f6b3be553ba4734a68862198ea4b7a8b0`
+
 ## Recommended Next Steps For Production
 
 Before a real release:

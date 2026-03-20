@@ -83,9 +83,7 @@ export function WhutImportModal({
   const theme = useTheme();
   const statusCopy = getStatusCopy(status, importedCount, importedTermCode);
   const semesterStartDate = semesterConfig?.start_date?.trim() ?? '';
-  const showWebView = Boolean(
-    semesterStartDate && (status === 'waiting-login' || status === 'syncing'),
-  );
+  const showWebView = status === 'waiting-login' || status === 'syncing';
   const primaryActionLabel =
     status === 'success' ? '完成并关闭' : status === 'error' ? '重试导入' : '继续导入';
   const handlePrimaryAction = React.useCallback(() => {

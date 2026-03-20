@@ -14,6 +14,8 @@ import { FAB } from '../src/shared/components/FAB';
 import {
   CATEGORIES,
   EventSheet,
+  MatrixEventBlock,
+  MATRIX_HOUR_HEIGHT,
   ScheduleEvent,
   useEvents,
   useSemesterConfig,
@@ -29,7 +31,7 @@ import { isSameDay } from '../src/shared/lib/date';
 
 const HOUR_START = 6;
 const HOUR_END = 24;
-const HOUR_HEIGHT = 60;
+const HOUR_HEIGHT = MATRIX_HOUR_HEIGHT;
 const TIME_COL_WIDTH = 36;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DAY_COL_WIDTH = (SCREEN_WIDTH - TIME_COL_WIDTH) / 7;
@@ -268,21 +270,19 @@ export default function MatrixScreen() {
             const evStart = new Date(ev.start_time);
             const dayIdx = weekDays.findIndex((d) => isSameDay(d, evStart));
             if (dayIdx === -1) return null;
+            const eventStyle = getEventStyle(ev, dayIdx);
 
             return (
-              <TouchableOpacity
+              <MatrixEventBlock
                 key={ev.id + '-' + idx}
-                style={getEventStyle(ev, dayIdx)}
-                activeOpacity={0.7}
+                style={eventStyle}
+                height={eventStyle.height}
                 onPress={() => handleTapEvent(ev)}
-              >
-                <Text
-                  style={[styles.eventTitle, { color: theme.colors.textMain }]}
-                  numberOfLines={1}
-                >
-                  {ev.title}
-                </Text>
-              </TouchableOpacity>
+                event={ev}
+                titleColor={theme.colors.textMain}
+                locationColor={theme.colors.textSub}
+                testID={`matrix-event-${ev.id}-${idx}`}
+              />
             );
           })}
 
@@ -369,10 +369,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     borderLeftWidth: StyleSheet.hairlineWidth,
-  },
-  eventTitle: {
-    fontSize: 10,
-    fontWeight: '600',
   },
   currentTimeLine: {
     position: 'absolute',

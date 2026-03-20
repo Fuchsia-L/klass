@@ -1,4 +1,9 @@
 export { EventCard } from './components/EventCard';
+export {
+  MatrixEventBlock,
+  MATRIX_HOUR_HEIGHT,
+  getMatrixEventContentLayout,
+} from './components/MatrixEventBlock';
 export { EventSheet } from './components/EventSheet';
 export { useEvents, useSemesterConfig } from './hooks';
 export {

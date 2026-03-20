@@ -84,31 +84,36 @@ export default function SettingsScreen() {
   };
 
   const handleBeginImport = React.useCallback(() => {
-    if (!form.semesterStart.trim()) {
-      setImportStatus('idle');
-      setImportErrorMessage('请先填写学期开始日期，再导入武汉理工课表。');
-      return;
-    }
-
     importGenerationRef.current += 1;
     setImportErrorMessage('');
     setImportedCount(undefined);
     setImportedTermCode(undefined);
     setHasStartedImport(true);
     setImportStatus('waiting-login');
-  }, [form.semesterStart]);
+  }, []);
 
   const handleScheduleDetailReady = React.useCallback(
     async ({
       termCode,
       scheduleDetail,
+      semesterStart: autoSemesterStart,
+      totalWeeks: autoTotalWeeks,
     }: {
       termCode: string;
       scheduleDetail: WhutCourseTableResponseRaw;
+      semesterStart?: string;
+      totalWeeks?: number;
     }) => {
       const importGeneration = importGenerationRef.current;
 
       try {
+        const startDate = autoSemesterStart || form.semesterStart.trim();
+        const weeks = autoTotalWeeks ?? (Number.parseInt(form.totalWeeks.trim(), 10) || 30);
+
+        if (!startDate) {
+          throw new Error('未能自动获取开学日期，请在设置中手动填写后重试。');
+        }
+
         const arrangedList = extractArrangedScheduleItems(scheduleDetail);
 
         if (arrangedList.length === 0) {
@@ -118,8 +123,8 @@ export default function SettingsScreen() {
         const importedEvents = await importWhutArrangedList({
           arrangedList,
           semesterConfig: {
-            start_date: form.semesterStart.trim(),
-            total_weeks: Number.parseInt(form.totalWeeks.trim(), 10) || 30,
+            start_date: startDate,
+            total_weeks: weeks,
           },
         });
 

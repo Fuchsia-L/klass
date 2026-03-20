@@ -9,20 +9,15 @@ import {
 import { WebView } from 'react-native-webview';
 import { useTheme } from '../../../theme/ThemeContext';
 import { WhutCourseTableResponseRaw } from './contracts';
-import { resolveWhutTermCode } from './term-code';
 
 const WHUT_CAS_LOGIN_URL =
   'https://zhlgd.whut.edu.cn/tpass/login?service=https%3A%2F%2Fjwxt.whut.edu.cn%2Fjwapp%2Fsys%2Fhomeapp%2Findex.do%3FforceCas%3D1';
-const WHUT_LOGIN_SUCCESS_URL_FRAGMENT = 'jwxt.whut.edu.cn/jwapp/sys/homeapp';
-const SESSION_POLL_INTERVAL_MS = 1000;
-const SESSION_FALLBACK_DELAY_MS = 300;
+
+const POLL_INTERVAL_MS = 2500;
+const POLL_TIMEOUT_MS = 60000;
 const SESSION_READY_TIMEOUT_MS = 15000;
 
 type SyncPhase = 'login' | 'session-check' | 'confirm-term' | 'fetching' | 'fetched' | 'error';
-
-type WebViewNavigationState = {
-  url: string;
-};
 
 type WebViewMessageLikeEvent = {
   nativeEvent: {
@@ -31,32 +26,18 @@ type WebViewMessageLikeEvent = {
 };
 
 type WhutWebViewMessage =
-  | {
-      source: 'whut-import';
-      type: 'session-pending';
-      attempt?: number;
-    }
-  | {
-      source: 'whut-import';
-      type: 'session-ready';
-      currentTermCode?: string;
-    }
-  | {
-      source: 'whut-import';
-      type: 'session-error';
-      message: string;
-    }
+  | { source: 'whut-import'; type: 'probe-login' }
+  | { source: 'whut-import'; type: 'probe-waiting' }
+  | { source: 'whut-import'; type: 'probe-ready'; termCode?: string; semesterStart?: string; totalWeeks?: number }
+  | { source: 'whut-import'; type: 'probe-error'; message: string }
+  | { source: 'whut-import'; type: 'session-ready'; currentTermCode?: string }
   | {
       source: 'whut-import';
       type: 'schedule-detail-success';
       termCode: string;
       scheduleDetail: WhutCourseTableResponseRaw;
     }
-  | {
-      source: 'whut-import';
-      type: 'schedule-detail-error';
-      message: string;
-    };
+  | { source: 'whut-import'; type: 'schedule-detail-error'; message: string };
 
 export type WhutImportWebViewContainerProps = {
   enabled: boolean;
@@ -66,101 +47,102 @@ export type WhutImportWebViewContainerProps = {
   onScheduleDetailReady: (payload: {
     termCode: string;
     scheduleDetail: WhutCourseTableResponseRaw;
+    semesterStart?: string;
+    totalWeeks?: number;
   }) => void | Promise<void>;
 };
 
-function buildSessionProbeScript(attempt: number): string {
+/**
+ * All-in-one probe script.
+ * It checks the current page URL and tries the API.
+ * Posts one of: probe-login, probe-waiting, probe-ready, probe-error.
+ */
+function buildProbeScript(): string {
   return `
     (function () {
-      var post = function (message) {
-        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(message));
-      };
-      var extractTermCode = function (value) {
-        if (!value) {
-          return undefined;
-        }
-        if (typeof value === 'string' && /^\\d{4}-\\d{4}-[12]$/.test(value)) {
-          return value;
-        }
-        if (typeof value !== 'object') {
-          return undefined;
-        }
-
-        var candidates = [
-          value.xnxqdm,
-          value.termCode,
-          value.xnxq,
-          value.currentTermCode,
-          value.currentTerm && value.currentTerm.xnxqdm,
-          value.datas && value.datas.xnxqdm,
-          value.data && value.data.xnxqdm
-        ];
-
-        for (var index = 0; index < candidates.length; index += 1) {
-          var candidate = candidates[index];
-          if (typeof candidate === 'string' && /^\\d{4}-\\d{4}-[12]$/.test(candidate)) {
-            return candidate;
-          }
-        }
-
-        return undefined;
+      var post = function (msg) {
+        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(msg));
       };
 
-      var toJson = function (text) {
+      var currentUrl = window.location.href || '';
+
+      if (/tpass\\/login|cas\\/login/i.test(currentUrl) || /zhlgd\\.whut\\.edu\\.cn/i.test(currentUrl)) {
+        post({ source: 'whut-import', type: 'probe-login' });
+        return;
+      }
+
+      var tryApi = async function () {
         try {
-          return JSON.parse(text);
-        } catch (error) {
-          return null;
-        }
-      };
+          // Step 1: check if session is alive
+          var r = await fetch('/jwapp/sys/homeapp/api/home/getCurrentTerm.do', {
+            method: 'GET', credentials: 'include',
+            headers: { 'Accept': 'application/json, text/plain, */*' }
+          });
+          var text = await r.text();
+          var data = null;
+          try { data = JSON.parse(text); } catch (e) {}
 
-      var endpoints = [
-        '/jwapp/sys/homeapp/api/home/getCurrentTerm.do',
-        '/jwapp/sys/homeapp/api/home/student/getCurrentTerm.do',
-        '/jwapp/sys/homeapp/api/home/getLoginUserInfo.do'
-      ];
+          if (!data) {
+            post({ source: 'whut-import', type: 'probe-waiting' });
+            return;
+          }
 
-      var probe = async function () {
-        for (var index = 0; index < endpoints.length; index += 1) {
-          var endpoint = endpoints[index];
+          // Step 2: session alive — figure out current term via getTermWeeks
+          // We try a reasonable default term code first
+          var now = new Date();
+          var year = now.getFullYear();
+          var month = now.getMonth() + 1;
+          var guessedTerm = month >= 8 ? (year + '-' + (year + 1) + '-1') : ((year - 1) + '-' + year + '-2');
+
+          var termCode = guessedTerm;
+          var semesterStart = undefined;
+          var totalWeeks = undefined;
 
           try {
-            var response = await fetch(endpoint, {
-              method: 'GET',
-              credentials: 'include',
+            var twBody = new URLSearchParams();
+            twBody.append('termCode', guessedTerm);
+            var twR = await fetch('/jwapp/sys/homeapp/api/home/getTermWeeks.do', {
+              method: 'POST', credentials: 'include',
               headers: {
-                'Accept': 'application/json, text/plain, */*'
-              }
+                'Accept': 'application/json, text/plain, */*',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+              },
+              body: twBody.toString()
             });
-            var text = await response.text();
+            var twText = await twR.text();
+            var twData = null;
+            try { twData = JSON.parse(twText); } catch (e) {}
 
-            if (response.redirected || /cas\/login/i.test(response.url) || /统一身份认证|login/i.test(text)) {
-              continue;
+            if (twData && twData.code === '0' && Array.isArray(twData.datas) && twData.datas.length > 0) {
+              var weeks = twData.datas;
+              totalWeeks = weeks.length;
+              // First week's startDate = semester start
+              var firstWeek = weeks[0];
+              if (firstWeek.startDate) {
+                semesterStart = firstWeek.startDate.substring(0, 10);
+              }
+              // Extract termCode from data if available
+              if (firstWeek.term && /^\\d{4}-\\d{4}-[12]$/.test(firstWeek.term)) {
+                termCode = firstWeek.term;
+              }
             }
-
-            if (response.ok) {
-              var data = toJson(text);
-              post({
-                source: 'whut-import',
-                type: 'session-ready',
-                currentTermCode: extractTermCode(data)
-              });
-              return;
-            }
-          } catch (error) {
+          } catch (e) {
+            // getTermWeeks failed — continue with guessed term, user will need manual date
           }
-        }
 
-        post({ source: 'whut-import', type: 'session-pending', attempt: ${attempt} });
+          post({
+            source: 'whut-import',
+            type: 'probe-ready',
+            termCode: termCode,
+            semesterStart: semesterStart,
+            totalWeeks: totalWeeks
+          });
+        } catch (e) {
+          post({ source: 'whut-import', type: 'probe-waiting' });
+        }
       };
 
-      probe().catch(function (error) {
-        post({
-          source: 'whut-import',
-          type: 'session-error',
-          message: error && error.message ? error.message : '教务会话检查失败'
-        });
-      });
+      tryApi();
     })();
     true;
   `;
@@ -191,7 +173,7 @@ function buildScheduleFetchScript(termCode: string): string {
           });
           var text = await response.text();
 
-          if (response.redirected || /cas\/login/i.test(response.url) || /统一身份认证|login/i.test(text)) {
+          if (response.redirected || /cas\\/login|tpass\\/login/i.test(response.url)) {
             post({
               source: 'whut-import',
               type: 'schedule-detail-error',
@@ -248,13 +230,11 @@ function buildScheduleFetchScript(termCode: string): string {
 function parseMessage(rawData: string): WhutWebViewMessage | null {
   try {
     const parsed = JSON.parse(rawData) as WhutWebViewMessage;
-
     if (parsed.source !== 'whut-import' || typeof parsed.type !== 'string') {
       return null;
     }
-
     return parsed;
-  } catch (error) {
+  } catch {
     return null;
   }
 }
@@ -270,9 +250,11 @@ export function WhutImportWebViewContainer({
   const webViewRef = React.useRef<any>(null);
   const pollIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fallbackProbeRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loginDetectedRef = React.useRef(false);
+  const sessionReadyTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loginNotifiedRef = React.useRef(false);
+  const sessionReadyRef = React.useRef(false);
   const requestedScheduleRef = React.useRef(false);
+  const probeDataRef = React.useRef<{ semesterStart: string; totalWeeks: number } | null>(null);
   const [phase, setPhase] = React.useState<SyncPhase>('login');
   const [helperMessage, setHelperMessage] = React.useState('请在下方 WebView 中完成武汉理工统一认证登录。');
   const [pendingTermCode, setPendingTermCode] = React.useState<string | null>(null);
@@ -283,15 +265,13 @@ export function WhutImportWebViewContainer({
       clearInterval(pollIntervalRef.current);
       pollIntervalRef.current = null;
     }
-
     if (pollTimeoutRef.current) {
       clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;
     }
-
-    if (fallbackProbeRef.current) {
-      clearTimeout(fallbackProbeRef.current);
-      fallbackProbeRef.current = null;
+    if (sessionReadyTimeoutRef.current) {
+      clearTimeout(sessionReadyTimeoutRef.current);
+      sessionReadyTimeoutRef.current = null;
     }
   }, []);
 
@@ -311,10 +291,7 @@ export function WhutImportWebViewContainer({
 
   const requestScheduleDetail = React.useCallback(
     (termCode: string) => {
-      if (requestedScheduleRef.current) {
-        return;
-      }
-
+      if (requestedScheduleRef.current) return;
       requestedScheduleRef.current = true;
       setPendingTermCode(null);
       setPhase('fetching');
@@ -324,100 +301,129 @@ export function WhutImportWebViewContainer({
     [injectScript],
   );
 
-  const startSessionPolling = React.useCallback(() => {
-    clearPolling();
-    requestedScheduleRef.current = false;
-    setPendingTermCode(null);
-    setPendingTermSource(null);
+  const notifyLoggedIn = React.useCallback(() => {
+    if (!loginNotifiedRef.current) {
+      loginNotifiedRef.current = true;
+      onLoggedIn();
+    }
+
     setPhase('session-check');
-    setHelperMessage('已识别到教务首页，正在建立会话并检测接口可用性。');
+    setHelperMessage('登录成功，等待教务系统初始化...');
 
-    let attempt = 0;
-    const probe = () => {
-      attempt += 1;
-      injectScript(buildSessionProbeScript(attempt));
-    };
+    if (!sessionReadyRef.current && !sessionReadyTimeoutRef.current) {
+      sessionReadyTimeoutRef.current = setTimeout(() => {
+        if (!sessionReadyRef.current) {
+          fail('登录成功，但教务会话未在 15 秒内就绪，请返回后重试。');
+        }
+      }, SESSION_READY_TIMEOUT_MS);
+    }
+  }, [fail, onLoggedIn]);
 
-    probe();
-    fallbackProbeRef.current = setTimeout(probe, SESSION_FALLBACK_DELAY_MS);
-    pollIntervalRef.current = setInterval(probe, SESSION_POLL_INTERVAL_MS);
-    pollTimeoutRef.current = setTimeout(() => {
-      fail('登录成功，但教务会话未在 15 秒内就绪，请返回后重试。');
-    }, SESSION_READY_TIMEOUT_MS);
-  }, [clearPolling, fail, injectScript]);
-
+  // Start polling as soon as the WebView is enabled.
+  // The probe script checks the page state itself.
   React.useEffect(() => {
     if (!enabled) {
       clearPolling();
-      loginDetectedRef.current = false;
+      loginNotifiedRef.current = false;
+      sessionReadyRef.current = false;
       requestedScheduleRef.current = false;
+      probeDataRef.current = null;
       setPhase('login');
       setHelperMessage('请在下方 WebView 中完成武汉理工统一认证登录。');
       setPendingTermCode(null);
       setPendingTermSource(null);
+      return;
     }
-  }, [clearPolling, enabled]);
 
-  React.useEffect(() => clearPolling, [clearPolling]);
+    // Start probing immediately and repeatedly
+    const probe = () => injectScript(buildProbeScript());
 
-  const handleNavigationStateChange = React.useCallback(
-    (navigationState: WebViewNavigationState) => {
-      if (!enabled || loginDetectedRef.current) {
-        return;
+    // First probe after a short delay (let WebView load)
+    const initialDelay = setTimeout(probe, 1500);
+
+    pollIntervalRef.current = setInterval(probe, POLL_INTERVAL_MS);
+    pollTimeoutRef.current = setTimeout(() => {
+      if (!sessionReadyRef.current) {
+        clearPolling();
+        setPhase('error');
+        setHelperMessage('教务系统连接超时（60秒），请关闭后重试。');
+        onError('教务系统连接超时');
       }
+    }, POLL_TIMEOUT_MS);
 
-      if (navigationState.url.includes(WHUT_LOGIN_SUCCESS_URL_FRAGMENT)) {
-        loginDetectedRef.current = true;
-        onLoggedIn();
-        startSessionPolling();
-      }
-    },
-    [enabled, onLoggedIn, startSessionPolling],
-  );
+    return () => {
+      clearTimeout(initialDelay);
+      clearPolling();
+    };
+  }, [enabled, clearPolling, injectScript, onError]);
 
   const handleMessage = React.useCallback(
     async (event: WebViewMessageLikeEvent) => {
       const message = parseMessage(event.nativeEvent.data);
+      if (!message) return;
 
-      if (!message) {
+      // --- Probe responses ---
+
+      if (message.type === 'probe-login') {
+        // Still on CAS login page — do nothing, keep waiting
         return;
       }
 
-      if (message.type === 'session-pending') {
-        setPhase('session-check');
-        setHelperMessage(`教务会话准备中，正在进行第 ${message.attempt ?? 1} 次检测。`);
+      if (message.type === 'probe-waiting') {
+        notifyLoggedIn();
         return;
       }
 
-      if (message.type === 'session-error') {
-        fail(message.message);
+      if (message.type === 'probe-ready') {
+        if (sessionReadyRef.current) return;
+        sessionReadyRef.current = true;
+        clearPolling();
+
+        notifyLoggedIn();
+
+        // Store semester info from the probe for later use
+        if (message.semesterStart) {
+          probeDataRef.current = {
+            semesterStart: message.semesterStart,
+            totalWeeks: message.totalWeeks ?? 30,
+          };
+        }
+
+        const termCode = message.termCode;
+        if (!termCode) {
+          fail('无法确定当前学期编码。');
+          return;
+        }
+
+        requestScheduleDetail(termCode);
         return;
       }
 
       if (message.type === 'session-ready') {
+        if (sessionReadyRef.current) {
+          return;
+        }
+
+        sessionReadyRef.current = true;
         clearPolling();
+        notifyLoggedIn();
 
-        const resolved = resolveWhutTermCode({
-          currentTermCode: message.currentTermCode,
-          semesterStartDate,
-        });
-
-        if (!resolved.termCode || !resolved.source) {
-          fail('无法确定当前学期编码，请检查学期配置后重试。');
+        const termCode = message.currentTermCode;
+        if (!termCode) {
+          fail('无法确定当前学期编码。');
           return;
         }
 
-        if (resolved.needsConfirmation) {
-          setPendingTermCode(resolved.termCode);
-          setPendingTermSource(resolved.source);
-          setPhase('confirm-term');
-          setHelperMessage(`未从教务系统上下文拿到当前学期，建议使用 ${resolved.termCode} 继续。`);
-          return;
-        }
-
-        requestScheduleDetail(resolved.termCode);
+        requestScheduleDetail(termCode);
         return;
       }
+
+      if (message.type === 'probe-error') {
+        fail(message.message);
+        return;
+      }
+
+      // --- Schedule fetch responses ---
 
       if (message.type === 'schedule-detail-error') {
         fail(message.message);
@@ -430,10 +436,25 @@ export function WhutImportWebViewContainer({
         await onScheduleDetailReady({
           termCode: message.termCode,
           scheduleDetail: message.scheduleDetail,
+          semesterStart: probeDataRef.current?.semesterStart,
+          totalWeeks: probeDataRef.current?.totalWeeks,
         });
       }
     },
-    [clearPolling, fail, onScheduleDetailReady, requestScheduleDetail, semesterStartDate],
+    [clearPolling, fail, notifyLoggedIn, onScheduleDetailReady, requestScheduleDetail, semesterStartDate],
+  );
+
+  const handleNavigationStateChange = React.useCallback(
+    (event: { url?: string }) => {
+      const url = event.url ?? '';
+      if (!/jwxt\.whut\.edu\.cn\/jwapp\/sys\/homeapp/i.test(url)) {
+        return;
+      }
+
+      notifyLoggedIn();
+      injectScript(buildProbeScript());
+    },
+    [injectScript, notifyLoggedIn],
   );
 
   return (
@@ -506,7 +527,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 12,
     overflow: 'hidden',
-    minHeight: 320,
+    minHeight: 480,
   },
   helperCard: {
     borderWidth: 1,
