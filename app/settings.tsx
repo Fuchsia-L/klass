@@ -13,6 +13,7 @@ import { AppBar } from '../src/shared/components/AppBar';
 import { useTheme } from '../src/theme/ThemeContext';
 import { THEME_OPTIONS, getTheme } from '../src/theme';
 import { useSettingsForm } from '../src/features/settings';
+import { WhutImportModal, WhutImportStatus } from '../src/features/schedule/import/WhutImportModal';
 
 const PREVIEW_COLORS: Array<keyof ReturnType<typeof getTheme>['colors']> = [
   'bg',
@@ -24,6 +25,10 @@ const PREVIEW_COLORS: Array<keyof ReturnType<typeof getTheme>['colors']> = [
 
 export default function SettingsScreen() {
   const theme = useTheme();
+  const [isImportModalVisible, setImportModalVisible] = React.useState(false);
+  const [importStatus, setImportStatus] = React.useState<WhutImportStatus>('idle');
+  const [importErrorMessage, setImportErrorMessage] = React.useState('');
+  const [hasStartedImport, setHasStartedImport] = React.useState(false);
   const {
     form,
     loading,
@@ -49,6 +54,48 @@ export default function SettingsScreen() {
 
   const handleExport = () => {
     Alert.alert('导出数据', '此功能即将上线，敬请期待。');
+  };
+
+  const resetImportState = React.useCallback(() => {
+    setImportModalVisible(false);
+    setImportStatus('idle');
+    setImportErrorMessage('');
+    setHasStartedImport(false);
+  }, []);
+
+  const handleOpenImportModal = () => {
+    setImportModalVisible(true);
+    setImportStatus('idle');
+    setImportErrorMessage('');
+    setHasStartedImport(false);
+  };
+
+  const handleBeginImport = () => {
+    if (!form.semesterStart.trim()) {
+      setImportStatus('idle');
+      setImportErrorMessage('请先填写学期开始日期，再导入武汉理工课表。');
+      return;
+    }
+
+    setImportErrorMessage('');
+    setHasStartedImport(true);
+    setImportStatus('waiting-login');
+  };
+
+  const handleRequestCloseImportModal = () => {
+    if (!hasStartedImport || importStatus === 'success' || importStatus === 'error') {
+      resetImportState();
+      return;
+    }
+
+    Alert.alert('取消导入', '当前导入流程尚未完成，确定要取消吗？', [
+      { text: '继续导入', style: 'cancel' },
+      {
+        text: '确认取消',
+        style: 'destructive',
+        onPress: resetImportState,
+      },
+    ]);
   };
 
   return (
@@ -220,6 +267,19 @@ export default function SettingsScreen() {
               数据管理
             </Text>
             <TouchableOpacity
+              onPress={handleOpenImportModal}
+              style={[
+                styles.dataButton,
+                {
+                  backgroundColor: theme.colors.inputBg,
+                  borderColor: theme.colors.primary,
+                },
+              ]}
+              testID="open-whut-import-button"
+            >
+              <Text style={[styles.dataButtonText, { color: theme.colors.primary }]}>导入武汉理工课表</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={handleExport}
               style={[
                 styles.dataButton,
@@ -280,6 +340,14 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </ScrollView>
       )}
+
+      <WhutImportModal
+        errorMessage={importErrorMessage}
+        onBeginImport={handleBeginImport}
+        onRequestClose={handleRequestCloseImportModal}
+        status={importStatus}
+        visible={isImportModalVisible}
+      />
     </View>
   );
 }
