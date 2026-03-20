@@ -1,38 +1,154 @@
 {
   "version": 1,
-  "requirement": "为 klass 课表 app 添加待办（Todo）功能。技术栈：Expo + React Native + TypeScript，数据用 AsyncStorage 本地持久化。功能要求：1. 三种待办类型：每日待办（每天自动刷新/重置完成状态）、每周待办（每周自动刷新）、长期待办（不自动刷新，手动管理）。2. 每个待办可设置优先级（高/中/低），列表按优先级排序展示。3. 支持创建/编辑/删除/标记完成。4. 在 Home 页面展示，三种类型用 tab 或分区展示。5. 遵循现有项目的 feature 模块化结构（domain / hooks / services / storage / components），新建 src/features/todo/ 目录。约束：不动现有的 schedule 和 settings 模块的逻辑。只做功能和基本可用的 UI，不做视觉美化（后续单独处理）。先阅读项目的 ARCHITECTURE.md 和现有 feature 目录结构再动手。",
+  "requirement": "添加课表导入功能：通过 WebView 登录武汉理工大学教务系统（CAS），登录成功后自动拉取课表数据并写入 klass 本地数据库。\n\n技术方案：\n1. 在设置页添加导入课表按钮\n2. 点击后弹出 react-native-webview 加载 CAS 登录页: https://zhlgd.whut.edu.cn/tpass/login?service=https%3A%2F%2Fjwxt.whut.edu.cn%2Fjwapp%2Fsys%2Fhomeapp%2Findex.do%3FforceCas%3D1\n3. 用户在 WebView 里手动登录\n4. 监听 URL 变化，当 URL 包含 jwxt.whut.edu.cn/jwapp/sys/homeapp 时表示登录成功\n5. 等待 5 秒让 JS 建立 session\n6. 注入 JS 调用 API：POST /jwapp/sys/homeapp/api/home/student/getMyScheduleDetail.do (body: termCode=2025-2026-2)\n7. scheduleDetail 返回格式: {datas: {arrangedList: [{courseName, dayOfWeek, beginSection, endSection, placeName, week, weeksAndTeachers, color, ...}]}}\n8. week 字段是 30 位二进制字符串，第 N 位为 1 表示第 N 周有课\n9. 解析后转换为 klass event 格式写入本地存储\n10. 需要安装 react-native-webview: npx expo install react-native-webview",
   "workdir": "D:\\_PROJECTS\\cyberschedule-rn",
-  "createdAt": "2026-03-17T07:42:04.156Z",
-  "updatedAt": "2026-03-17T07:42:04.488Z",
-  "status": "failed",
-  "currentPhase": 0,
-  "plan": null,
+  "createdAt": "2026-03-20T05:15:44.638Z",
+  "updatedAt": "2026-03-20T05:23:06.902Z",
+  "status": "in-progress",
+  "currentPhase": 1,
+  "plan": {
+    "projectName": "whut-schedule-import",
+    "summary": "为 Expo Router 的课表应用新增“武汉理工教务系统导入”能力：在设置页通过内嵌 WebView 打开 CAS 登录页，用户手动登录后识别 jwxt 成功跳转，建立会话并调用课表接口拉取数据；随后把 WHUT 的节次、星期与 30 位周次位图转换为应用现有 `ScheduleEvent` 模型可消费的离散事件，写入本地存储且不误删手动创建的数据。由于当前仓库没有任何测试基础设施、现有事件模型只支持 ISO 时间与简单 repeat，因此需要先补齐测试工具链，并明确导入数据模型、节次时间映射、学期起始日期依赖、termCode 获取策略与导入来源标记。",
+    "phases": [
+      {
+        "id": 1,
+        "name": "测试基础与导入契约",
+        "description": "搭建最小可用测试基础设施，并定义导入功能的核心契约。安装并配置 Jest、TypeScript 支持、`@testing-library/react-native`、AsyncStorage mock、`react-native-webview` mock；同时补充导入相关类型与设计约束文档/常量，包括 WHUT 原始课表类型、节次到时间的映射表、导入来源标记方案（如 `source: 'manual' | 'whut-import'`）、以及“导入课表”采用设置页内 Modal 而非新路由的实现决策。",
+        "acceptance": [
+          "仓库新增可运行的测试命令与 Jest 配置，能够在本地成功执行至少一个 smoke test",
+          "存在 `react-native-webview` 与 AsyncStorage 的测试 mock，组件测试不因原生模块缺失而失败",
+          "`ScheduleEvent` 存储校验已支持可选 `source` 字段，旧数据仍可被正常读取",
+          "导入设计约束已落地为代码常量或类型定义：节次时间表、WHUT 响应类型、导入来源枚举、Modal 方案"
+        ],
+        "tests": [
+          "新增 storage 层兼容性测试：旧版无 `source` 数据仍可通过校验，新版带 `source` 数据也可通过",
+          "新增测试环境 smoke test：渲染一个基础 React Native 组件并通过 Jest 运行",
+          "新增导入常量测试：节次时间映射表覆盖预期节次范围且开始时间早于结束时间"
+        ],
+        "dependsOn": []
+      },
+      {
+        "id": 2,
+        "name": "设置页入口与导入容器",
+        "description": "在 `settings.tsx` 增加“导入武汉理工课表”按钮，并实现受控的导入 Modal 容器。该容器先只完成 UI 生命周期与状态管理：打开/关闭、加载状态、错误提示、取消导入确认、导入前校验学期配置是否完整（至少要求 `SemesterConfig.start_date` 已配置），为后续 WebView 流程预留回调与状态显示区域。",
+        "acceptance": [
+          "设置页出现清晰可见的导入按钮，点击后以全屏或大尺寸 Modal 打开导入界面",
+          "当未配置学期开始日期时，阻止继续导入并给出明确提示",
+          "用户可以在导入过程中关闭 Modal 并安全取消，不会污染现有事件数据",
+          "Modal 内具备状态展示位：等待登录、正在同步、导入成功、导入失败"
+        ],
+        "tests": [
+          "新增设置页组件测试：点击导入按钮后展示 Modal，点击关闭后隐藏",
+          "新增表单校验测试：缺少 `start_date` 时触发错误提示且不进入导入流程",
+          "新增状态渲染测试：根据导入状态显示对应文案或 loading 组件"
+        ],
+        "dependsOn": [
+          1
+        ]
+      },
+      {
+        "id": 3,
+        "name": "课表解析与本地写入策略",
+        "description": "先独立完成最难的数据转换逻辑，不依赖 WebView。实现 WHUT `arrangedList` 到本地事件的纯函数转换：根据 `dayOfWeek`、`beginSection`、`endSection` 和节次时间表生成每日上课时间；基于 `SemesterConfig.start_date` 与 30 位 `week` 位图把每个有效周展开为一个离散 `ScheduleEvent`，统一使用 `repeat: 'none'`；默认分类设为“学习”，位置映射到 `location`，教师/周次等补充信息写入 `notes`；所有导入事件带 `source: 'whut-import'`。同时实现导入持久化策略：仅清理旧的 `whut-import` 事件，保留 `manual` 事件，并通过现有 `events.service` 触发订阅刷新。",
+        "acceptance": [
+          "给定固定的 `arrangedList` 和学期开始日期，转换结果可生成正确的 ISO `start_time` 与 `end_time`",
+          "`week` 位图中为 1 的周会生成对应周的独立事件，为 0 的周不会生成事件",
+          "导入写入时仅替换历史 `whut-import` 事件，不删除手动创建事件",
+          "导入完成后通过现有 service 层写入，订阅 `useEvents` 的页面无需额外刷新逻辑即可收到更新"
+        ],
+        "tests": [
+          "新增纯函数单元测试：单门课程跨多个离散周次时会生成正确数量的事件",
+          "新增日期换算测试：基于 `start_date` 和 `dayOfWeek` 计算出正确自然日与节次时间",
+          "新增存储策略测试：重复导入会覆盖旧 `whut-import` 事件但保留 `manual` 事件",
+          "新增 service 集成测试：导入写入后订阅监听器会被触发一次"
+        ],
+        "dependsOn": [
+          1,
+          2
+        ]
+      },
+      {
+        "id": 4,
+        "name": "WebView 登录与课表抓取",
+        "description": "把真实 WebView 登录与接口调用接入导入容器。安装并使用 `react-native-webview` 打开 CAS 登录页，监听 URL 变化；当 URL 包含 `jwxt.whut.edu.cn/jwapp/sys/homeapp` 时判定登录成功。不要仅依赖固定 5 秒延迟，而是实现有限时轮询的会话就绪检查：每隔 1 秒尝试注入脚本访问接口，最长等待 15 秒，必要时再回退到短延迟。`termCode` 不硬编码为 `2025-2026-2`，而是优先由当前日期/学期配置推导，或先调用可用上下文接口获取当前学期；获取不到时再允许用户确认默认值。成功后通过注入 JS 发起 `POST /jwapp/sys/homeapp/api/home/student/getMyScheduleDetail.do` 并把结果通过 WebView 消息通道传回 React Native。",
+        "acceptance": [
+          "WebView 能正常打开指定 CAS 登录页，用户可在其中完成手动登录",
+          "当 URL 命中 jwxt 首页特征时，导入流程进入“建立会话/同步中”状态",
+          "会话检查与接口调用在超时、未登录、接口报错时都能返回明确失败状态",
+          "`termCode` 来源不是硬编码常量，代码中存在可测试的解析/推导逻辑",
+          "成功抓取时 React Native 侧能收到结构化 `scheduleDetail` 数据而非仅网页文本"
+        ],
+        "tests": [
+          "新增 WebView 容器组件测试：模拟 URL 变化后进入已登录状态并触发抓取逻辑",
+          "新增 `termCode` 推导单元测试：根据当前日期或学期配置得到预期学期编码",
+          "新增消息处理测试：WebView `postMessage` 返回成功/失败载荷时，容器状态正确更新",
+          "新增超时测试：轮询超过上限后显示可见错误并停止继续注入"
+        ],
+        "dependsOn": [
+          1,
+          2
+        ]
+      },
+      {
+        "id": 5,
+        "name": "端到端导入体验收尾",
+        "description": "把抓取链路与解析持久化链路整合成完整导入体验，并补齐用户可见反馈。完成从设置页点击导入、WebView 登录、接口返回、数据解析、事件写入、Modal 成功关闭/停留提示的完整流程；同时增加去重/幂等保护、失败重试入口、导入数量统计和成功提示，确保用户返回首页或矩阵页时即可看到最新课表数据。",
+        "acceptance": [
+          "从设置页发起导入后，成功链路可以写入本地数据库并展示导入成功数量",
+          "重复导入同一学期不会无限累积重复事件",
+          "导入失败时用户可以在当前会话内重试，无需重启应用",
+          "导入成功后首页/矩阵页通过既有订阅机制显示最新课表"
+        ],
+        "tests": [
+          "新增端到端级集成测试：模拟成功抓取 payload 后完成解析并写入事件列表",
+          "新增幂等性测试：同一 payload 连续导入两次，`whut-import` 事件总数保持稳定",
+          "新增失败恢复测试：首次抓取失败后点击重试，第二次成功可完成写入",
+          "新增界面联动测试：导入成功后列表页 hook 重新加载并渲染新增课程标题"
+        ],
+        "dependsOn": [
+          3,
+          4
+        ]
+      }
+    ],
+    "techStack": [
+      "Expo",
+      "React Native",
+      "TypeScript",
+      "Expo Router",
+      "@react-native-async-storage/async-storage",
+      "react-native-webview",
+      "Jest",
+      "@testing-library/react-native"
+    ],
+    "estimatedComplexity": "high"
+  },
   "phases": {},
   "finalReview": null,
   "log": [
     {
-      "timestamp": "2026-03-17T07:42:04.269Z",
+      "timestamp": "2026-03-20T05:16:32.678Z",
       "step": "decompose",
       "message": "Codex attempt 1",
-      "ok": false
+      "ok": true
     },
     {
-      "timestamp": "2026-03-17T07:42:04.377Z",
+      "timestamp": "2026-03-20T05:18:55.099Z",
+      "step": "review-plan",
+      "message": "Claude review attempt 1",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-20T05:20:18.778Z",
       "step": "decompose",
       "message": "Codex attempt 2",
-      "ok": false
+      "ok": true
     },
     {
-      "timestamp": "2026-03-17T07:42:04.488Z",
-      "step": "decompose",
-      "message": "Codex attempt 3",
-      "ok": false
-    },
-    {
-      "timestamp": "2026-03-17T07:42:04.488Z",
-      "step": "pipeline",
-      "message": "Planning failed",
-      "error": "Codex failed to decompose requirement"
+      "timestamp": "2026-03-20T05:23:06.900Z",
+      "step": "review-plan",
+      "message": "Claude review attempt 2",
+      "ok": true
     }
   ]
 }

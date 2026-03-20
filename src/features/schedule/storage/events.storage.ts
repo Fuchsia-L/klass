@@ -1,5 +1,11 @@
 import { loadJSON, saveJSON, STORAGE_KEYS } from '../../../platform/storage/async-storage';
-import { CategoryKey, CATEGORIES, RepeatType, ScheduleEvent } from '../types';
+import {
+  CategoryKey,
+  CATEGORIES,
+  RepeatType,
+  ScheduleEvent,
+  SCHEDULE_EVENT_SOURCES,
+} from '../types';
 
 let cachedEvents: ScheduleEvent[] | null = null;
 
@@ -23,6 +29,13 @@ function isValidReminder(value: unknown): value is ScheduleEvent['reminder_minut
   return value === undefined || value === 5 || value === 15 || value === 30;
 }
 
+function isValidSource(value: unknown): value is ScheduleEvent['source'] {
+  return (
+    value === undefined ||
+    SCHEDULE_EVENT_SOURCES.includes(value as (typeof SCHEDULE_EVENT_SOURCES)[number])
+  );
+}
+
 function isScheduleEvent(value: unknown): value is ScheduleEvent {
   if (!value || typeof value !== 'object') return false;
   const event = value as Record<string, unknown>;
@@ -33,7 +46,8 @@ function isScheduleEvent(value: unknown): value is ScheduleEvent {
     isValidDateString(event.start_time) &&
     isValidDateString(event.end_time) &&
     isValidRepeatType(event.repeat) &&
-    isValidReminder(event.reminder_minutes)
+    isValidReminder(event.reminder_minutes) &&
+    isValidSource(event.source)
   );
 }
 

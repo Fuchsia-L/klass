@@ -17,6 +17,10 @@ export const CATEGORIES: Record<CategoryKey, CategoryInfo> = {
 
 export type RepeatType = 'none' | 'daily' | 'weekly';
 
+export const SCHEDULE_EVENT_SOURCES = ['manual', 'whut-import'] as const;
+
+export type ScheduleEventSource = (typeof SCHEDULE_EVENT_SOURCES)[number];
+
 export interface ScheduleEvent {
   id: string;
   title: string;
@@ -27,6 +31,7 @@ export interface ScheduleEvent {
   location?: string;
   reminder_minutes?: 5 | 15 | 30;
   notes?: string;
+  source?: ScheduleEventSource;
   is_completed: boolean;
 }
 

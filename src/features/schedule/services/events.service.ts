@@ -47,6 +47,7 @@ export async function addEvent(event: EventInput): Promise<EventMutationResult> 
   const nextEvent: ScheduleEvent = {
     ...event,
     id: generateId(),
+    source: event.source ?? 'manual',
     is_completed: false,
   };
 
