@@ -25,6 +25,17 @@ function isValidDateString(value: unknown): value is string {
   return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
 }
 
+function isValidIsoDateString(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+
+  const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+  if (!isoDatePattern.test(value)) return false;
+
+  const parsedDate = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().slice(0, 10) === value;
+}
+
 function isValidReminder(value: unknown): value is ScheduleEvent['reminder_minutes'] {
   return value === undefined || value === 5 || value === 15 || value === 30;
 }
@@ -34,6 +45,10 @@ function isValidSource(value: unknown): value is ScheduleEvent['source'] {
     value === undefined ||
     SCHEDULE_EVENT_SOURCES.includes(value as (typeof SCHEDULE_EVENT_SOURCES)[number])
   );
+}
+
+function isValidRepeatUntil(value: unknown): value is ScheduleEvent['repeat_until'] {
+  return value === undefined || isValidIsoDateString(value);
 }
 
 function isScheduleEvent(value: unknown): value is ScheduleEvent {
@@ -46,6 +61,7 @@ function isScheduleEvent(value: unknown): value is ScheduleEvent {
     isValidDateString(event.start_time) &&
     isValidDateString(event.end_time) &&
     isValidRepeatType(event.repeat) &&
+    isValidRepeatUntil(event.repeat_until) &&
     isValidReminder(event.reminder_minutes) &&
     isValidSource(event.source)
   );

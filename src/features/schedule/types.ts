@@ -28,6 +28,7 @@ export interface ScheduleEvent {
   start_time: string;
   end_time: string;
   repeat: RepeatType;
+  repeat_until?: string;
   location?: string;
   reminder_minutes?: 5 | 15 | 30;
   notes?: string;
