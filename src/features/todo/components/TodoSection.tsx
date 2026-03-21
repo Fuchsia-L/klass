@@ -4,7 +4,8 @@ import { Alert, View, Text, StyleSheet, TouchableOpacity, LayoutAnimation, UIMan
 if (Platform.OS === 'android') UIManager.setLayoutAnimationEnabledExperimental?.(true);
 import { ClipboardList, Plus } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
-import { TodoItem, TodoType, TODO_TYPE_LABELS, PRIORITY_ORDER } from '../types';
+import { TodoItem, TodoType, TODO_TYPE_LABELS } from '../types';
+import { sortTodosForDisplay } from '../domain/sort';
 import { toggleTodoComplete, deleteTodo } from '../services/todo.service';
 import { TodoItemCard } from './TodoItemCard';
 import { TodoSheet } from './TodoSheet';
@@ -24,13 +25,7 @@ export function TodoSection({ todos, loading }: Props) {
 
   const filtered = useMemo(
     () =>
-      todos
-        .filter((t) => t.type === activeTab)
-        .sort((a, b) => {
-          const priorityDiff = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-          if (priorityDiff !== 0) return priorityDiff;
-          return Number(a.is_completed) - Number(b.is_completed);
-        }),
+      sortTodosForDisplay(todos.filter((t) => t.type === activeTab)),
     [todos, activeTab],
   );
 
