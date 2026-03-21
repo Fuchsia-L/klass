@@ -3,9 +3,9 @@
   "requirement": "修两个问题：\n\n## Bug 1: 待办完成后下沉位置不对\n\n文件：src/features/todo/components/TodoSection.tsx\n\n当前排序逻辑先按 priority 排序，再按 is_completed 排序。导致已完成的高优先级项目仍排在未完成的低优先级项目上面。\n\n修法：把 is_completed 提升为第一排序键。未完成的全部排在上面（内部按优先级），已完成的全部沉底（内部按优先级）。\n\n## Feature 2: 事件重复系统加 repeat_until\n\n### 2a. 类型定义\n文件：src/features/schedule/types.ts\n- ScheduleEvent 接口加 repeat_until?: string（ISO date string，重复截止日期）\n\n### 2b. 重复展开逻辑\n文件：src/features/schedule/domain/repeat.ts\n- expandRepeatingEvents 里，对 daily/weekly 重复事件，如果 event.repeat_until 存在，cursor 不能超过 repeat_until 日期\n\n### 2c. UI - EventSheet\n文件：src/features/schedule/components/EventSheet.tsx\n- 加 repeatUntil state（Date | null）\n- 当 repeat !== 'none' 时，在重复选项下方显示一个截止日期选择器（用 DateTimePicker，只需要日期部分）\n- 如果 repeat === 'weekly'，在重复选项旁显示提示文字，如每周三（从 startTime 推断星期几）\n- 保存时把 repeatUntil 序列化为 ISO string 存入 repeat_until 字段\n- 查看模式下显示截止日期\n- repeat 切回 none 时清空 repeatUntil\n\n### 2d. 存储兼容\n文件：src/features/schedule/services/events.service.ts 和 storage/events.storage.ts\n- repeat_until 是可选字段，旧数据没有这个字段不影响",
   "workdir": "D:\\_PROJECTS\\cyberschedule-rn",
   "createdAt": "2026-03-21T03:29:28.456Z",
-  "updatedAt": "2026-03-21T03:44:50.910Z",
+  "updatedAt": "2026-03-21T03:56:10.795Z",
   "status": "in-progress",
-  "currentPhase": 2,
+  "currentPhase": 3,
   "plan": {
     "projectName": "todo-sort-repeat-until",
     "summary": "本次需求包含两个彼此基本独立的改动：一是修复待办列表完成态排序，使所有未完成项始终位于已完成项之前，并在各自分组内继续按优先级排序；二是为日程重复系统增加可选的 `repeat_until` 截止日期，从类型定义、存储校验、重复展开逻辑到 `EventSheet` 的创建/编辑/查看体验形成完整闭环。为降低返工和合并风险，计划将待办排序单独成相互独立的修复阶段，将 `repeat_until` 的数据模型与存储兼容性放在同一阶段，再把重复计算与 `EventSheet` 的状态、保存和展示合并到最后一个阶段。",
@@ -85,6 +85,19 @@
       "testFixCycles": 1,
       "startedAt": "2026-03-21T03:33:03.146Z",
       "completedAt": "2026-03-21T03:41:29.561Z"
+    },
+    "2": {
+      "status": "completed",
+      "reviewCycles": 1,
+      "testFixCycles": 1,
+      "startedAt": "2026-03-21T03:44:50.911Z",
+      "completedAt": "2026-03-21T03:46:53.653Z"
+    },
+    "3": {
+      "status": "implementing",
+      "reviewCycles": 1,
+      "testFixCycles": 1,
+      "startedAt": "2026-03-21T03:46:53.655Z"
     }
   },
   "finalReview": null,
@@ -135,6 +148,36 @@
       "timestamp": "2026-03-21T03:41:29.371Z",
       "step": "phase-1-review",
       "message": "Claude review cycle 2",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-21T03:46:11.279Z",
+      "step": "phase-2-implement",
+      "message": "Codex implementation",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-21T03:46:53.479Z",
+      "step": "phase-2-review",
+      "message": "Claude review cycle 1",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-21T03:51:52.810Z",
+      "step": "phase-3-implement",
+      "message": "Codex implementation",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-21T03:53:08.675Z",
+      "step": "phase-3-review",
+      "message": "Claude review cycle 1",
+      "ok": true
+    },
+    {
+      "timestamp": "2026-03-21T03:56:04.750Z",
+      "step": "phase-3-fix",
+      "message": "Review fix cycle 1",
       "ok": true
     }
   ]

@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Check, Edit3, Trash2, X } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
-import { formatTime } from '../../../shared/lib/date';
+import { formatLocalDate, formatTime } from '../../../shared/lib/date';
 import { addEvent, deleteEvent, toggleComplete, updateEvent } from '../services/events.service';
 import { CATEGORIES, CategoryKey, RepeatType, ScheduleEvent } from '../types';
 import DateTimePicker from './DateTimePicker';
@@ -42,6 +42,12 @@ const REMINDER_OPTIONS: { value: number | undefined; label: string }[] = [
 ];
 
 const CATEGORY_KEYS = Object.keys(CATEGORIES) as CategoryKey[];
+const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'] as const;
+
+function parseDateOnly(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day, 12, 0, 0, 0);
+}
 
 export function EventSheet({
   visible,
@@ -60,6 +66,7 @@ export function EventSheet({
   const [startTime, setStartTime] = useState(new Date());
   const [endTime, setEndTime] = useState(new Date());
   const [repeat, setRepeat] = useState<RepeatType>('none');
+  const [repeatUntil, setRepeatUntil] = useState<Date | undefined>(undefined);
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [reminder, setReminder] = useState<number | undefined>(undefined);
@@ -74,6 +81,7 @@ export function EventSheet({
       setStartTime(defaultStart ?? new Date());
       setEndTime(defaultEnd ?? new Date(Date.now() + 3600000));
       setRepeat('none');
+      setRepeatUntil(undefined);
       setLocation('');
       setNotes('');
       setReminder(undefined);
@@ -86,11 +94,19 @@ export function EventSheet({
       setStartTime(new Date(event.start_time));
       setEndTime(new Date(event.end_time));
       setRepeat(event.repeat);
+      setRepeatUntil(event.repeat_until ? parseDateOnly(event.repeat_until) : undefined);
       setLocation(event.location ?? '');
       setNotes(event.notes ?? '');
       setReminder(event.reminder_minutes);
     }
   }, [defaultEnd, defaultStart, event, initialMode, visible]);
+
+  const handleRepeatChange = (value: RepeatType) => {
+    setRepeat(value);
+    if (value === 'none') {
+      setRepeatUntil(undefined);
+    }
+  };
 
   const handleSave = async () => {
     if (!title.trim()) {
@@ -104,6 +120,7 @@ export function EventSheet({
       start_time: startTime.toISOString(),
       end_time: endTime.toISOString(),
       repeat,
+      repeat_until: repeat === 'none' || !repeatUntil ? undefined : formatLocalDate(repeatUntil),
       location: location.trim() || undefined,
       reminder_minutes: reminder as ScheduleEvent['reminder_minutes'],
       notes: notes.trim() || undefined,
@@ -145,14 +162,15 @@ export function EventSheet({
     onClose();
   };
 
-  const formatDateTime = (date: Date) =>
-    `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date
-      .getDate()
-      .toString()
-      .padStart(2, '0')} ${formatTime(date)}`;
+  const formatDateTime = (date: Date) => `${formatLocalDate(date)} ${formatTime(date)}`;
 
   const isViewMode = mode === 'view';
   const isEditable = mode === 'create' || mode === 'edit';
+  const weeklyRepeatHint = repeat === 'weekly' ? `每周${WEEKDAY_LABELS[startTime.getDay()]}重复` : null;
+  const repeatUntilValue =
+    repeat !== 'none'
+      ? repeatUntil ?? new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate(), 12, 0, 0, 0)
+      : undefined;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -284,7 +302,7 @@ export function EventSheet({
                   return (
                     <TouchableOpacity
                       key={option.value}
-                      onPress={() => setRepeat(option.value)}
+                      onPress={() => handleRepeatChange(option.value)}
                       style={[
                         styles.chip,
                         {
@@ -306,6 +324,36 @@ export function EventSheet({
                 {REPEAT_OPTIONS.find((option) => option.value === repeat)?.label}
               </Text>
             )}
+
+            {repeat === 'weekly' ? (
+              <Text style={[styles.helperText, { color: theme.colors.textSub }]}>{weeklyRepeatHint}</Text>
+            ) : null}
+
+            {repeat !== 'none' ? (
+              <>
+                <Text style={[styles.label, { color: theme.colors.textSub }]}>截止日期</Text>
+                {isEditable ? (
+                  <>
+                    <Text style={[styles.helperText, { color: theme.colors.textSub }]}>
+                      {repeatUntil ? `已选择：${formatLocalDate(repeatUntil)}` : '未设置截止日期'}
+                    </Text>
+                    <DateTimePicker
+                      testID="repeat-until-picker"
+                      value={repeatUntilValue!}
+                      onChange={setRepeatUntil}
+                      theme={theme}
+                      mode="date"
+                      minimumHour={0}
+                      onPickerActive={handlePickerActive}
+                    />
+                  </>
+                ) : (
+                  <Text style={[styles.value, { color: theme.colors.textMain }]}>
+                    {event?.repeat_until ?? '无截止日期'}
+                  </Text>
+                )}
+              </>
+            ) : null}
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>地点</Text>
             {isEditable ? (
@@ -450,6 +498,10 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: 15,
+  },
+  helperText: {
+    fontSize: 13,
+    marginTop: 6,
   },
   input: {
     paddingHorizontal: 12,

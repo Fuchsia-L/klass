@@ -17,9 +17,11 @@ interface DateTimePickerProps {
   value: Date;
   onChange: (date: Date) => void;
   theme: ThemeConfig;
+  mode?: 'datetime' | 'date';
   minimumHour?: number;
   allowMidnight24?: boolean;
   onPickerActive?: (active: boolean) => void;
+  testID?: string;
 }
 
 type PickerColumnProps = {
@@ -186,10 +188,13 @@ export default function DateTimePicker({
   value,
   onChange,
   theme,
+  mode = 'datetime',
   minimumHour = 6,
   allowMidnight24 = false,
   onPickerActive,
+  testID,
 }: DateTimePickerProps) {
+  const isDateOnly = mode === 'date';
   const { displayDate, hour, minute } = getDisplayState(value, allowMidnight24, minimumHour);
 
   const hourOptions = useMemo(() => {
@@ -200,6 +205,17 @@ export default function DateTimePicker({
   const minuteOptions = useMemo(() => (hour === 24 ? [0] : Array.from({ length: 60 }, (_, index) => index)), [hour]);
 
   useEffect(() => {
+    if (isDateOnly) {
+      if (value.getSeconds() === 0 && value.getMilliseconds() === 0) {
+        return;
+      }
+
+      const normalizedDate = new Date(value);
+      normalizedDate.setSeconds(0, 0);
+      onChange(normalizedDate);
+      return;
+    }
+
     const nextHour = clampValue(hour, hourOptions);
     const nextMinute = nextHour === 24 ? 0 : clampValue(minute, minuteOptions);
     const shouldNormalizeDate =
@@ -227,7 +243,7 @@ export default function DateTimePicker({
     if (normalizedDate.getTime() !== value.getTime()) {
       onChange(normalizedDate);
     }
-  }, [allowMidnight24, displayDate, hour, hourOptions, minute, minimumHour, minuteOptions, onChange, value]);
+  }, [allowMidnight24, displayDate, hour, hourOptions, isDateOnly, minute, minimumHour, minuteOptions, onChange, value]);
 
   const updateValue = (nextDate: Date, nextHour: number, nextMinute: number) => {
     const normalizedDate = new Date(nextDate);
@@ -245,6 +261,13 @@ export default function DateTimePicker({
   };
 
   const handleAdjustDate = (days: number) => {
+    if (isDateOnly) {
+      const normalizedDate = addDays(displayDate, days);
+      normalizedDate.setSeconds(0, 0);
+      onChange(normalizedDate);
+      return;
+    }
+
     updateValue(addDays(displayDate, days), hour, minute);
   };
 
@@ -264,7 +287,7 @@ export default function DateTimePicker({
   const selectedMinute = clampValue(minute, minuteOptions);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} testID={testID}>
       <View
         style={[
           styles.dateSegment,
@@ -283,24 +306,26 @@ export default function DateTimePicker({
         </TouchableOpacity>
       </View>
 
-      <View style={styles.timeGroup}>
-        <PickerColumn
-          items={hourOptions}
-          selectedValue={selectedHour}
-          theme={theme}
-          onSelect={handleSelectHour}
-          formatter={(item) => item.toString().padStart(2, '0')}
-          onPickerActive={onPickerActive}
-        />
-        <Text style={[styles.colon, { color: theme.colors.primary }]}>:</Text>
-        <PickerColumn
-          items={minuteOptions}
-          selectedValue={selectedMinute}
-          theme={theme}
-          onSelect={handleSelectMinute}
-          onPickerActive={onPickerActive}
-        />
-      </View>
+      {isDateOnly ? null : (
+        <View style={styles.timeGroup}>
+          <PickerColumn
+            items={hourOptions}
+            selectedValue={selectedHour}
+            theme={theme}
+            onSelect={handleSelectHour}
+            formatter={(item) => item.toString().padStart(2, '0')}
+            onPickerActive={onPickerActive}
+          />
+          <Text style={[styles.colon, { color: theme.colors.primary }]}>:</Text>
+          <PickerColumn
+            items={minuteOptions}
+            selectedValue={selectedMinute}
+            theme={theme}
+            onSelect={handleSelectMinute}
+            onPickerActive={onPickerActive}
+          />
+        </View>
+      )}
     </View>
   );
 }

@@ -1,4 +1,15 @@
+import { formatLocalDate } from '../../../shared/lib/date';
 import { ScheduleEvent } from '../types';
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isAfterRepeatUntil(date: Date, repeatUntil?: string): boolean {
+  return repeatUntil !== undefined && formatLocalDate(date) > repeatUntil;
+}
 
 export function expandRepeatingEvents(
   events: ScheduleEvent[],
@@ -23,10 +34,18 @@ export function expandRepeatingEvents(
     let cursor = new Date(eventStart);
 
     while (cursor.getTime() + duration < rangeStart.getTime()) {
-      cursor.setDate(cursor.getDate() + stepDays);
+      cursor = addDays(cursor, stepDays);
+    }
+
+    if (isAfterRepeatUntil(cursor, event.repeat_until)) {
+      continue;
     }
 
     while (cursor <= rangeEnd) {
+      if (isAfterRepeatUntil(cursor, event.repeat_until)) {
+        break;
+      }
+
       const instanceEnd = new Date(cursor.getTime() + duration);
       if (instanceEnd >= rangeStart) {
         result.push({
@@ -35,8 +54,7 @@ export function expandRepeatingEvents(
           end_time: instanceEnd.toISOString(),
         });
       }
-      cursor = new Date(cursor);
-      cursor.setDate(cursor.getDate() + stepDays);
+      cursor = addDays(cursor, stepDays);
     }
   }
 
