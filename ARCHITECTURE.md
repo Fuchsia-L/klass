@@ -1,3 +1,5 @@
+The doc is largely accurate. I'll output the complete updated version with the section labels promoted from "Phases 1–2" to "Phases 1–3" to reflect Phase 3's contribution.
+
 # CyberSchedule RN — Architecture
 
 Single source of truth for all agents (coders and reviewers). Keep this file in sync with the code: if a symbol exists, it must be listed here; if it is listed here, it must exist.
@@ -121,9 +123,17 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `hooks/useSettingsForm.ts` — form state for semester + theme, plus `resetAll`.
 - `services/settings.service.ts` — `loadSettings`, `saveSemesterSettings`, `clearAllData`.
 
-### `src/features/rating/` — **NEW (Phases 1–2)**
-- `src/features/rating/index.ts` — public barrel exporting `useRatings` hook, rating service APIs (`createRating`, `createRatingService`, `exportRatings`, `getRating`, `listPendingSyncRatings`, `listRatings`, `markRatingSynced`, `removeRating`, `subscribeToRatingChanges`, `updateRating`), service input/export types (`RatingInput`, `RatingUpdateInput`, `RatingsExportData`), repository class/singleton (`LocalRatingRepository`, `localRatingRepository`), `RatingRepository` type, and rating domain types.
+### `src/features/rating/` — **NEW (Phases 1–3)**
+- `src/features/rating/index.ts` — public barrel exporting rating components (`EfficiencySlider`, `RatingHistoryList`, `RatingInputSheet`, `StarRating`), `useRatings` hook, rating service APIs (`createRating`, `createRatingService`, `exportRatings`, `getRating`, `listPendingSyncRatings`, `listRatings`, `markRatingSynced`, `removeRating`, `subscribeToRatingChanges`, `updateRating`), service input/export types (`RatingInput`, `RatingUpdateInput`, `RatingsExportData`), repository class/singleton (`LocalRatingRepository`, `localRatingRepository`), `RatingRepository` type, and rating domain types.
 - `src/features/rating/types.ts` — `RatingValue`, `TimeSlotRating` entity.
+- `src/features/rating/components/index.ts` — component barrel.
+- `src/features/rating/components/StarRating.tsx` — themed 1–5 star input with active fill, inactive outline, and press scale feedback.
+- `src/features/rating/components/EfficiencySlider.tsx` — themed discrete 1–5 custom slider with track, active range, tick marks, thumb, and Orbitron numeric value.
+- `src/features/rating/components/RatingInputSheet.tsx` — bottom-sheet rating form with editable slot start/end, rating, efficiency, activity, mood, reflection, save, and cancel.
+- `src/features/rating/components/RatingHistoryList.tsx` — grouped history list, date descending, with themed rating cards and random-on-mount empty state.
+- `src/features/rating/components/rating-components.test.tsx` — component smoke tests for rating inputs, sheet payload/field caps, grouped history, and empty state stability.
+- `src/features/rating/copy/empty-state-quips.ts` — exact 50 empty-state quips plus `pickRandomQuip`.
+- `src/features/rating/copy/empty-state-quips.test.ts` — asserts quip count and random picker membership.
 - `src/features/rating/hooks/index.ts` — barrel exporting `useRatings`.
 - `src/features/rating/hooks/useRatings.ts` — loads ratings via the service, exposes `loading` / `error` state plus `refresh` / `save` (create or update) / `remove` helpers, and subscribes to rating service changes (which forward repository mutations) for auto-refresh.
 - `src/features/rating/services/index.ts` — barrel exporting rating service APIs and input/export types.
@@ -223,7 +233,7 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `EventCard({ event, onPress? })` — Callers: `app/index.tsx`.
 - `MatrixEventBlock({ event, height, style, onPress, titleColor, locationColor, testID? })` + `MATRIX_HOUR_HEIGHT`, `getMatrixEventContentLayout({ height, hasLocation, titleLineCount? })` — Callers: `app/matrix.tsx`.
 - `EventSheet({ visible, mode, event?, defaultStart?, defaultEnd?, onClose })` — Callers: `app/index.tsx`, `app/matrix.tsx`.
-- `DateTimePicker` (default export) `({ value, onChange, theme, mode?, minimumHour?, allowMidnight24?, onPickerActive?, testID? })` — Callers: `EventSheet`.
+- `DateTimePicker` (default export) `({ value, onChange, theme, mode?, minimumHour?, allowMidnight24?, onPickerActive?, testID? })` — Callers: `EventSheet`, `RatingInputSheet`.
 - `getCategoryColor(theme: ThemeConfig, category: CategoryKey): string` — Callers: `EventCard`, `MatrixEventBlock` consumers, `app/matrix.tsx`.
 
 ### Schedule import — `src/features/schedule/import/`
@@ -257,7 +267,7 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `saveSemesterSettings(config: SemesterConfig): Promise<void>` — Callers: `useSettingsForm`.
 - `clearAllData(): Promise<void>` — wipes all `STORAGE_KEYS` and resets schedule+semester listeners. Callers: `useSettingsForm.resetAll`.
 
-### Rating — `src/features/rating/` **(established in Phases 1–2)**
+### Rating — `src/features/rating/` **(established in Phases 1–3)**
 
 Types — `src/features/rating/types.ts`:
 - `RatingValue = 1 | 2 | 3 | 4 | 5`.
@@ -284,6 +294,16 @@ Service — `src/features/rating/services/ratings.service.ts`:
 Hook — `src/features/rating/hooks/useRatings.ts`:
 - `useRatings(): { ratings: TimeSlotRating[]; loading: boolean; error: string | null; refresh: () => Promise<void>; save: (input: RatingInput, id?: string) => Promise<TimeSlotRating>; remove: (id: string) => Promise<void> }` — initial load via `listRatings`, subscribes to `subscribeToRatingChanges` for auto-refresh, mounts/unmount-safe state updates via `isMountedRef`, surfaces errors as strings, and routes `save` to `createRating` or `updateRating` based on optional `id`. Callers: future rating screens/components.
 
+Components — `src/features/rating/components/`:
+- `StarRating({ value: RatingValue, onChange?: (v: RatingValue) => void, size?: number, disabled?: boolean, testID?: string })` — themed interactive 1–5 star control with active fill, inactive outline, and press scale feedback. Callers: `RatingInputSheet`, `RatingHistoryList`, future rating screens.
+- `EfficiencySlider({ value: RatingValue, onChange?: (v: RatingValue) => void, disabled?: boolean, testID?: string })` — themed discrete 1–5 selector with track, active range, tick marks, thumb, and Orbitron numeric value. Callers: `RatingInputSheet`, future rating screens.
+- `RatingInputSheet({ visible: boolean, rating?: TimeSlotRating | null, defaultStart?: Date, defaultEnd?: Date, onSave: (input: RatingInput, id?: string) => Promise<void> | void, onClose: () => void })` — themed bottom sheet with editable slot start/end (via shared `DateTimePicker`), rating, efficiency, activity, mood, reflection inputs (enforces local trims/caps before producing the `RatingInput` payload + optional rating id). Callers: future rating tab / event-completion prompts.
+- `RatingHistoryList({ ratings: TimeSlotRating[], onPressItem?: (rating: TimeSlotRating) => void, refreshing?: boolean, onRefresh?: () => void })` — groups records by local date descending into themed cards; renders empty state with a single mount-time quip from `pickRandomQuip`. Callers: future rating tab.
+
+Copy — `src/features/rating/copy/empty-state-quips.ts`:
+- `EMPTY_STATE_QUIPS: readonly string[]` — exact 50-item empty-state copy pool (verbatim, Lux voice locked).
+- `pickRandomQuip(): string` — returns one member from `EMPTY_STATE_QUIPS`. Callers: `RatingHistoryList`.
+
 Storage — `src/features/rating/storage/ratings.storage.ts`:
 - `loadRatingsFromStorage(): Promise<TimeSlotRating[]>` — cached read with schema validation.
 - `listRatings(): Promise<TimeSlotRating[]>` — alias used by repository.
@@ -303,14 +323,14 @@ Local repository — `src/features/rating/storage/local-repository.ts`:
 - `AppBar({ title, subtitle?, right? })` — Callers: `app/index.tsx`, `app/matrix.tsx`, `app/settings.tsx`.
 - `FAB({ onPress })` — draggable floating action button. Callers: `app/index.tsx`, `app/matrix.tsx`.
 - `FAB_SIZE`, `FAB_EDGE_MARGIN`, `FAB_BOTTOM_MARGIN`, `FAB_DRAG_ACTIVE_OPACITY`, `FAB_IDLE_OPACITY`, `FAB_DRAG_THRESHOLD`, `FabPosition`, `FabScreenSize`, `FabBounds`, `getFabBounds(screen)`, `clampFabPosition(pos, screen)`, `getDefaultFabPosition(screen)`, `snapFabPosition(pos, screen)`, `hasExceededDragThreshold(dx, dy)` — Callers: `FAB.tsx`, tests.
-- `formatTime(date)`, `formatLocalDate(date)`, `formatDate(date)`, `isSameDay(a, b)` — Callers: `EventCard`, `EventSheet`, `app/matrix.tsx`, `whut-import`, etc.
+- `formatTime(date)`, `formatLocalDate(date)`, `formatDate(date)`, `isSameDay(a, b)` — Callers: `EventCard`, `EventSheet`, `RatingInputSheet`, `RatingHistoryList`, `app/matrix.tsx`, `whut-import`, etc.
 - `generateId(): string` — Callers: `events.service`, `todo.service`, `whut-import`, (future: rating UI flows that need short ids; service uses UUIDs internally).
 
 ### Theme — `src/theme/`
 - `ThemeConfig` — Callers: every component that styles via theme; `categoryColors` resolver.
 - `DEFAULT_THEME`, `THEME_OPTIONS`, `isThemeName(name)`, `getTheme(name?)`, `getAllThemes()` — Callers: `ThemeContext`, `app/settings.tsx`, `useSettingsForm`.
 - `<ThemeProvider>` — Callers: `app/_layout.tsx`.
-- `useTheme(): ThemeConfig` — Callers: nearly all UI components.
+- `useTheme(): ThemeConfig` — Callers: nearly all UI components, including all rating components.
 - `useThemeSettings(): { themeName, setThemeName }` — Callers: `useSettingsForm`.
 
 ---
@@ -366,9 +386,11 @@ ThemeProvider (app/_layout.tsx)
   → components read colors/fonts/radius
 ```
 
-### Rating flow (storage + service + hook live; UI screens arrive in later phases)
+### Rating flow (storage + service + hook + core UI components live; tab screen + settings export arrive in later phases)
 ```
-[Phase 3+] UI component
+[Phase 4+] RatingTab / event-completion entry
+  → RatingInputSheet (StarRating + EfficiencySlider + DateTimePicker)
+      → onSave(input, id?)
   → features/rating/hooks/useRatings.ts
       (refresh / save / remove)
   → features/rating/services/ratings.service.ts
@@ -379,6 +401,7 @@ ThemeProvider (app/_layout.tsx)
       → platform/storage/async-storage.ts  (key: cs-rn:time-slot-ratings:v1)
       → in-memory cache (cachedRatings) + subscribeToRatings listeners
           → repository.subscribe → subscribeToRatingChanges → useRatings.refresh
+              → RatingHistoryList re-render
 ```
 
 The repository interface is the seam that keeps service code decoupled from AsyncStorage. A future `RemoteRatingRepository` or `SyncingRatingRepository` can replace `LocalRatingRepository` without touching the service / hook / UI layers. The service-level `subscribeToRatingChanges` lazily attaches to `repository.subscribe` so storage mutations from any source (e.g. background sync) propagate to UI.
@@ -393,7 +416,7 @@ Runtime:
 - `react-native-gesture-handler`, `react-native-safe-area-context`, `react-native-screens`, `react-native-svg`, `react-native-web` — navigation / layout primitives and web fallback.
 - `react-native-webview` — CAS login flow inside `WhutImportWebViewContainer`.
 - `@react-native-async-storage/async-storage` — persistence backend for events, semester, theme, todos, and ratings.
-- `lucide-react-native` — icon set used across tabs, cards, sheets.
+- `lucide-react-native` — icon set used across tabs, cards, sheets (including `X` close icon in `RatingInputSheet`).
 
 Dev / test:
 - `typescript` — static typing.
@@ -408,3 +431,4 @@ Future (not yet installed, referenced in rating spec):
 
 - **Phase 1 — Domain Model & Storage Foundation (time-slot-rating)**: added `src/features/rating/` with `TimeSlotRating` type, `RatingRepository` contract, AsyncStorage-backed `ratings.storage.ts` (key `cs-rn:time-slot-ratings:v1`) following the `events.storage` cache+listener pattern, `LocalRatingRepository` implementation with `listPendingSync` / `markSynced` semantics, barrel exports, plus storage and repository Jest suites. Registered the new storage key in `src/platform/storage/async-storage.ts`. No UI, service, or hook layer yet — those arrive in Phases 2–5.
 - **Phase 2 — Rating Service & Hook**: added repository-injected `ratings.service.ts` exposing `createRatingService` factory + default singleton (UUID id generation, default slot window, ISO timestamps, rating/efficiency 1–5 validation, optional field length caps, sync helpers, `exportRatings()` JSON payload, listener bridging via `repository.subscribe`). Added `useRatings` hook (loading/error/refresh/save/remove with mount-safety and auto-refresh on service notifications). Extended `LocalRatingRepository` with a `subscribe` method that forwards storage listeners. Updated `src/features/rating/index.ts` to export the new hook and service surface, and added service tests backed by a fake `RatingRepository`.
+- **Phase 3 — Core Rating UI Components**: added `StarRating`, `EfficiencySlider`, `RatingInputSheet` (reuses shared `DateTimePicker` from the schedule feature), and `RatingHistoryList` under `src/features/rating/components`, plus the locked 50-item `EMPTY_STATE_QUIPS` copy pool and `pickRandomQuip` helper under `src/features/rating/copy`. Promoted the rating section heading from "Phases 1–2" to "Phases 1–3" and re-exported the new components from rating barrels. Added component smoke tests and quip contract tests covering input interaction, sheet field caps/payload shape, grouped-by-date history rendering, mount-stable empty-state quip, quip count, and picker membership.

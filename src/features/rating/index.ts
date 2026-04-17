@@ -1,4 +1,5 @@
 export { useRatings } from './hooks';
+export { EfficiencySlider, RatingHistoryList, RatingInputSheet, StarRating } from './components';
 export {
   createRating,
   createRatingService,

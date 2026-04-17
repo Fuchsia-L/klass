@@ -241,7 +241,7 @@ export function WhutImportModal({
                 ]}
               >
                 <Text style={[styles.placeholderText, { color: theme.colors.textSub }]}>
-                  {status === 'waiting-login'
+                  {status === 'idle'
                     ? '点击“继续导入”后将在这里打开教务系统登录页。'
                     : '这里将展示登录态、同步进度与结果摘要。'}
                 </Text>
