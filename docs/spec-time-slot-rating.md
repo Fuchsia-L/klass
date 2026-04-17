@@ -16,15 +16,16 @@ Iris 对上课效率不满意率约 90%。想要：
 
 ## 范围（In）
 
-- 一个时段结束后能够录入：**星级评分（1-5）+ 选填一句反思 + 选填"做了什么"**
+- 一个时段结束后能够录入：**星级 rating（1-5）+ 效率 slider（1-5）+ 选填一句反思 + 选填"做了什么"**
 - 可以浏览最近 N 天的时段评分历史
 - 数据本地持久化（AsyncStorage）
 - 能导出成 JSON（占位云端同步用，未来接真云端时直接替换）
+- Repository 接口预留云端同步扩展点
 
 ## 范围（Out，本次不做）
 
 - 桌面小部件
-- 云端同步 / 域名 / 服务器
+- 真·云端同步 / 域名 / 服务器（但要为它预留接口和字段）
 - MCP endpoint
 - 日总结生成
 - AI 自动填写内容
@@ -39,18 +40,27 @@ interface TimeSlotRating {
   slot_start: string;      // ISO timestamp, 时段起
   slot_end: string;        // ISO timestamp, 时段终
   linked_event_id?: string; // 关联课表 event（可选，未来课表自动触发用）
-  rating: 1 | 2 | 3 | 4 | 5;
+
+  rating: 1 | 2 | 3 | 4 | 5;      // 主观打分（星级 UI）
+  efficiency: 1 | 2 | 3 | 4 | 5;  // 效率自评（slider UI），与 rating 独立
+
   mood?: string;           // 单字段 free text，≤ 20 字
   activity?: string;       // 这段时间做了啥，≤ 50 字
   reflection?: string;     // 一句反思，≤ 200 字
+
   created_at: string;      // ISO timestamp
+  updated_at: string;      // ISO timestamp, 每次 edit 刷新 — 云端 last-write-wins 用
+  synced_at?: string;      // 本次未实装，但 schema 预留。null/undefined = 未同步
+  schema_version: 1;       // migration 锚点
 }
 ```
 
 **说明**：
 - 独立实体，不改现有 `ScheduleEvent` schema（避免污染课表导入）
 - `linked_event_id` 是为将来"课表时段结束 → 自动弹出打分"留的钩子，这次不接
+- `rating` 和 `efficiency` 是两个独立维度：rating 是整体满意度（星），efficiency 是纯效率（slider）。UI 上视觉区分
 - 所有 mood/activity/reflection 都 optional，降录入阻力
+- `updated_at` / `synced_at` / `schema_version` 本次虽不用，但**必须写入**：换日迁移到云端不想改 schema
 
 ## 存储层
 
@@ -59,19 +69,42 @@ interface TimeSlotRating {
 - CRUD + listener 通知
 - 内存缓存 + load on demand
 
+**Repository 抽象（为云端同步留口子）**：
+
+`ratings.service.ts` **不要直接** 调 `ratings.storage.ts`，而是通过 `RatingRepository` 接口：
+
+```ts
+// src/features/rating/storage/repository.ts
+export interface RatingRepository {
+  list(): Promise<TimeSlotRating[]>;
+  get(id: string): Promise<TimeSlotRating | null>;
+  save(rating: TimeSlotRating): Promise<void>;  // upsert
+  remove(id: string): Promise<void>;
+  // 预留给云端同步用，本次本地 impl 直接返回本地列表：
+  listPendingSync(): Promise<TimeSlotRating[]>;  // synced_at == null 的
+  markSynced(id: string, syncedAt: string): Promise<void>;
+}
+```
+
+本次只实装 `LocalRatingRepository`（走 AsyncStorage）。未来云端实装 `RemoteRatingRepository` 或 `SyncingRatingRepository`（包装 local 和 remote 做合并）不动 service 层。
+
 新建 `src/features/rating/` 整个 feature 目录：
 ```
 rating/
 ├── components/
-│   ├── RatingInputSheet.tsx     # 底部弹窗：评分 + 三个选填
-│   └── RatingHistoryList.tsx    # 列表：按日期倒序
+│   ├── RatingInputSheet.tsx     # 底部弹窗：rating + efficiency + 三个选填
+│   ├── RatingHistoryList.tsx    # 列表：按日期倒序
+│   ├── StarRating.tsx           # 1-5 星组件，主题色
+│   └── EfficiencySlider.tsx     # 1-5 slider 组件，主题色
 ├── hooks/
 │   └── useRatings.ts
 ├── services/
-│   └── ratings.service.ts       # CRUD 包装
+│   └── ratings.service.ts       # CRUD 包装，走 repository
 ├── storage/
-│   ├── ratings.storage.ts
-│   └── ratings.storage.test.ts
+│   ├── ratings.storage.ts       # AsyncStorage 实现
+│   ├── ratings.storage.test.ts
+│   ├── repository.ts            # RatingRepository 接口
+│   └── local-repository.ts      # LocalRatingRepository 实现（封装 ratings.storage）
 ├── index.ts
 └── types.ts
 ```
@@ -81,21 +114,35 @@ rating/
 **入口**（本次做两个）：
 1. Tab 导航加一个「RATING」Tab（`app/rating.tsx`），显示历史列表 + 右下 FAB「+ 新增」
 2. FAB 打开 `RatingInputSheet`，字段：
-   - 时段（默认本小时整点~当前时间，可编辑）
-   - 星级（1-5 的横排圆点）
-   - 活动（可选，单行）
+   - 时段（默认当前时间往前 1h，可编辑）
+   - **星级 Rating**（1-5 横排，点击填充，`StarRating.tsx`）
+   - **效率 Slider**（1-5 离散刻度，横向 slider，`EfficiencySlider.tsx`）
+   - 活动（可选，单行，≤50）
    - 心情（可选，单行，≤20）
    - 反思（可选，多行，≤200）
    - 保存 / 取消
 
 **历史列表**：
 - 按日期分组，最近在上
-- 每条展示：时段 · 星级 · 活动摘要
+- 每条展示：时段 · 星级 · 效率 · 活动摘要
 - 点击进详情（v1 先不做编辑，只展示）
 
 **空状态**：一句话 + 箭头指向 FAB。
 
-**主题**：严格走现有 `useTheme()`，零硬编码色值。星级激活色用 `colors.primary`（和首页一致）。
+## UI 美学要求（**不可降级**）
+
+CyberSchedule RN 是赛博朋克视觉，**不是**默认 RN 长相。Codex/Claude 写 UI 时必须：
+
+1. **字体**：数字、标签、Tab 文字用 `Orbitron`（已加载），中文用 system。直接复用根布局 `_layout.tsx` 里的字体加载逻辑
+2. **色值零硬编码**：全部从 `useTheme()` 取；星级激活色、slider 活动区用 `colors.primary`；星级/slider 禁用态用 `colors.textSecondary` 或等价主题字段
+3. **Tab icon**：新 RATING Tab 的图标交互（选中/未选中、字体大小、颜色过渡）必须和现存 TODAY / MATRIX / SETTINGS 三个 Tab **完全一致**。照抄 `app/_layout.tsx` 里现有 Tab 的 pattern
+4. **StarRating 组件**：不是直接把 5 个 lucide `<Star/>` 罗列完事。要有点击反馈（scale / color transition）、未选中态要有明确 outline
+5. **EfficiencySlider 组件**：不用系统默认 slider 样子。track + thumb 都按主题色定制，thumb 下方显示当前数值（Orbitron 字体）。离散 5 档，每档有小刻度线
+6. **底部弹窗（RatingInputSheet）**：滑入动画、圆角顶部、背景 overlay、主题色边框。参考现存 `EventSheet.tsx` 或 schedule/components 下任何已有 Sheet 组件的视觉规格
+7. **历史列表卡片**：每条是一张卡而不是纯文本行。边框/背景/圆角和 `TodaySection` 或类似首页现有卡片一致
+8. **空状态**：文案带点 Iris 的幽默感，比如"还没打分，这一小时白过了" / "你有时间看这页说明没时间打分？"，不要写"暂无数据"
+
+**验证手段**：写代码前**强制先读** `app/_layout.tsx`、`app/index.tsx`、`src/features/schedule/components/EventSheet.tsx`、`src/theme/index.ts`（主题字段）、至少一个现有 Tab 页面，把视觉惯例吃进去再动笔。
 
 ## 导出 JSON
 
@@ -108,9 +155,14 @@ rating/
 `ratings.storage.test.ts` 至少覆盖：
 - 空初始状态
 - 增 → 读
-- 改 → 读
+- 改 → 读（`updated_at` 有刷新）
 - 删 → 读
 - JSON 序列化/反序列化对 edge case（空字段、emoji、长字符串）不炸
+- `rating` 和 `efficiency` 字段均被正确保存/读取
+
+`local-repository.test.ts` 覆盖 `RatingRepository` 接口的本地实现：
+- `listPendingSync()` 只返回 `synced_at == null` 的
+- `markSynced()` 后下次 `listPendingSync()` 不再包含该条
 
 跳过 UI 测试（Expo 下成本高，本次不做）。
 
