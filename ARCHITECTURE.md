@@ -42,10 +42,12 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `scripts/upload-apk.js` — APK upload helper.
 
 ### `app/` — Expo Router screens
-- `app/_layout.tsx` — root layout: font loading, `ThemeProvider`, `SafeAreaProvider`, bottom Tabs (`HOME`, `MATRIX`, `SETTINGS`).
+- `app/_layout.tsx` — root layout: font loading, `ThemeProvider`, `SafeAreaProvider`, bottom Tabs (`TODAY`, `MATRIX`, `RATING`, `SETTINGS`).
 - `app/index.tsx` — Home page: TODAY / TOMORROW event lists, TodoSection footer, FAB for new event.
 - `app/index.test.tsx` — smoke test for Home.
 - `app/matrix.tsx` — Matrix page: 7-column weekly grid 06:00–24:00, current-time line, week navigation, ISO/semester week label.
+- `app/rating.tsx` — Rating page: loads local ratings through `useRatings`, renders `RatingHistoryList`, opens `RatingInputSheet` from the FAB with a default one-hour slot ending now, and shows a read-only detail modal on history-card press.
+- `app/rating.test.tsx` — screen tests for empty state/FAB indicator, default slot orchestration, save refresh, AsyncStorage-backed persistence, and read-only detail behavior.
 - `app/settings.tsx` — Settings page: theme picker, semester form, WHUT import entry, data management buttons.
 - `app/settings.test.tsx` — smoke test for Settings.
 
@@ -386,9 +388,9 @@ ThemeProvider (app/_layout.tsx)
   → components read colors/fonts/radius
 ```
 
-### Rating flow (storage + service + hook + core UI components live; tab screen + settings export arrive in later phases)
+### Rating flow (storage + service + hook + tab UI live; settings export arrives in later phases)
 ```
-[Phase 4+] RatingTab / event-completion entry
+RatingTab / event-completion entry
   → RatingInputSheet (StarRating + EfficiencySlider + DateTimePicker)
       → onSave(input, id?)
   → features/rating/hooks/useRatings.ts
@@ -402,6 +404,10 @@ ThemeProvider (app/_layout.tsx)
       → in-memory cache (cachedRatings) + subscribeToRatings listeners
           → repository.subscribe → subscribeToRatingChanges → useRatings.refresh
               → RatingHistoryList re-render
+
+History card press in `app/rating.tsx`
+  → read-only detail modal
+  → no edit affordance in v1
 ```
 
 The repository interface is the seam that keeps service code decoupled from AsyncStorage. A future `RemoteRatingRepository` or `SyncingRatingRepository` can replace `LocalRatingRepository` without touching the service / hook / UI layers. The service-level `subscribeToRatingChanges` lazily attaches to `repository.subscribe` so storage mutations from any source (e.g. background sync) propagate to UI.
@@ -432,3 +438,4 @@ Future (not yet installed, referenced in rating spec):
 - **Phase 1 — Domain Model & Storage Foundation (time-slot-rating)**: added `src/features/rating/` with `TimeSlotRating` type, `RatingRepository` contract, AsyncStorage-backed `ratings.storage.ts` (key `cs-rn:time-slot-ratings:v1`) following the `events.storage` cache+listener pattern, `LocalRatingRepository` implementation with `listPendingSync` / `markSynced` semantics, barrel exports, plus storage and repository Jest suites. Registered the new storage key in `src/platform/storage/async-storage.ts`. No UI, service, or hook layer yet — those arrive in Phases 2–5.
 - **Phase 2 — Rating Service & Hook**: added repository-injected `ratings.service.ts` exposing `createRatingService` factory + default singleton (UUID id generation, default slot window, ISO timestamps, rating/efficiency 1–5 validation, optional field length caps, sync helpers, `exportRatings()` JSON payload, listener bridging via `repository.subscribe`). Added `useRatings` hook (loading/error/refresh/save/remove with mount-safety and auto-refresh on service notifications). Extended `LocalRatingRepository` with a `subscribe` method that forwards storage listeners. Updated `src/features/rating/index.ts` to export the new hook and service surface, and added service tests backed by a fake `RatingRepository`.
 - **Phase 3 — Core Rating UI Components**: added `StarRating`, `EfficiencySlider`, `RatingInputSheet` (reuses shared `DateTimePicker` from the schedule feature), and `RatingHistoryList` under `src/features/rating/components`, plus the locked 50-item `EMPTY_STATE_QUIPS` copy pool and `pickRandomQuip` helper under `src/features/rating/copy`. Promoted the rating section heading from "Phases 1–2" to "Phases 1–3" and re-exported the new components from rating barrels. Added component smoke tests and quip contract tests covering input interaction, sheet field caps/payload shape, grouped-by-date history rendering, mount-stable empty-state quip, quip count, and picker membership.
+- **Phase 4 — Rating Tab Integration**: added `app/rating.tsx` and wired it into Expo Router tabs between `MATRIX` and `SETTINGS` using the lucide `Star` icon and existing tab style options. The rating screen uses `useRatings` + `RatingHistoryList`, opens `RatingInputSheet` from the shared FAB with a current-time-minus-one-hour default slot, saves through the hook so history updates immediately, reads persisted AsyncStorage ratings on mount, and opens a read-only detail modal from history cards. Added layout and rating screen tests for tab order/icon, empty state, default slot orchestration, save refresh, persistence reload, and read-only details.

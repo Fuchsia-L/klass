@@ -4,7 +4,7 @@ import { View, StyleSheet } from 'react-native';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Home, Grid3X3, Settings } from 'lucide-react-native';
+import { Home, Grid3X3, Settings, Star } from 'lucide-react-native';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
 
 function TabLayout() {
@@ -35,7 +35,7 @@ function TabLayout() {
         <Tabs.Screen
           name="index"
           options={{
-            title: 'HOME',
+            title: 'TODAY',
             tabBarIcon: ({ color, size }) => <Home size={size} color={color} />,
           }}
         />
@@ -44,6 +44,13 @@ function TabLayout() {
           options={{
             title: 'MATRIX',
             tabBarIcon: ({ color, size }) => <Grid3X3 size={size} color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="rating"
+          options={{
+            title: 'RATING',
+            tabBarIcon: ({ color, size }) => <Star size={size} color={color} />,
           }}
         />
         <Tabs.Screen
