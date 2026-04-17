@@ -53,6 +53,10 @@ jest.mock('../src/features/settings', () => ({
   useSettingsForm: jest.fn(),
 }));
 
+jest.mock('../src/features/settings/services/rating-export.service', () => ({
+  exportLocalRatingsAsJson: jest.fn(),
+}));
+
 jest.mock('../src/features/schedule/import/WhutImportWebViewContainer', () => {
   const React = require('react');
   const { Text, TouchableOpacity, View } = require('react-native');
@@ -103,6 +107,11 @@ jest.mock('../src/features/schedule/import/WhutImportWebViewContainer', () => {
 const { useSettingsForm } = jest.requireMock('../src/features/settings') as {
   useSettingsForm: jest.Mock;
 };
+const { exportLocalRatingsAsJson } = jest.requireMock(
+  '../src/features/settings/services/rating-export.service',
+) as {
+  exportLocalRatingsAsJson: jest.Mock;
+};
 
 function buildSettingsFormMock(overrides?: Partial<ReturnType<typeof useSettingsForm>>) {
   return {
@@ -125,6 +134,11 @@ function buildSettingsFormMock(overrides?: Partial<ReturnType<typeof useSettings
 describe('SettingsScreen WHUT import entry', () => {
   beforeEach(() => {
     useSettingsForm.mockReturnValue(buildSettingsFormMock());
+    exportLocalRatingsAsJson.mockResolvedValue({
+      count: 0,
+      json: '[]',
+      method: 'react-native-share',
+    });
     resetEventsState();
     clearEventsCache();
   });
@@ -240,6 +254,31 @@ describe('SettingsScreen WHUT import entry', () => {
     });
 
     expect(getByText('导入成功')).toBeTruthy();
+  });
+});
+
+describe('SettingsScreen rating export', () => {
+  beforeEach(() => {
+    useSettingsForm.mockReturnValue(buildSettingsFormMock());
+    exportLocalRatingsAsJson.mockResolvedValue({
+      count: 1,
+      json: '[{"id":"rating-1"}]',
+      method: 'react-native-share',
+    });
+  });
+
+  it('renders the rating export action and delegates to the export helper', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    const { getByTestId, getByText } = render(<SettingsScreen />);
+
+    expect(getByText('导出打分数据')).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.press(getByTestId('export-ratings-button'));
+    });
+
+    expect(exportLocalRatingsAsJson).toHaveBeenCalledTimes(1);
+    expect(alertSpy).toHaveBeenCalledWith('导出打分数据', '已准备 1 条打分记录。');
   });
 });
 

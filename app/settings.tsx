@@ -13,6 +13,7 @@ import { AppBar } from '../src/shared/components/AppBar';
 import { useTheme } from '../src/theme/ThemeContext';
 import { THEME_OPTIONS, getTheme } from '../src/theme';
 import { useSettingsForm } from '../src/features/settings';
+import { exportLocalRatingsAsJson } from '../src/features/settings/services/rating-export.service';
 import {
   extractArrangedScheduleItems,
   importWhutArrangedList,
@@ -36,6 +37,7 @@ export default function SettingsScreen() {
   const [importedCount, setImportedCount] = React.useState<number | undefined>(undefined);
   const [importedTermCode, setImportedTermCode] = React.useState<string | undefined>(undefined);
   const [hasStartedImport, setHasStartedImport] = React.useState(false);
+  const [isExportingRatings, setIsExportingRatings] = React.useState(false);
   const importGenerationRef = React.useRef(0);
   const {
     form,
@@ -60,8 +62,19 @@ export default function SettingsScreen() {
     ]);
   };
 
-  const handleExport = () => {
-    Alert.alert('导出数据', '此功能即将上线，敬请期待。');
+  const handleExportRatings = async () => {
+    if (isExportingRatings) return;
+
+    setIsExportingRatings(true);
+    try {
+      const result = await exportLocalRatingsAsJson();
+      Alert.alert('导出打分数据', `已准备 ${result.count} 条打分记录。`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '导出打分数据失败，请稍后重试。';
+      Alert.alert('导出打分数据失败', message);
+    } finally {
+      setIsExportingRatings(false);
+    }
   };
 
   const resetImportState = React.useCallback(() => {
@@ -349,17 +362,20 @@ export default function SettingsScreen() {
               <Text style={[styles.dataButtonText, { color: theme.colors.primary }]}>导入武汉理工课表</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={handleExport}
+              onPress={handleExportRatings}
+              disabled={isExportingRatings}
               style={[
                 styles.dataButton,
                 {
                   backgroundColor: theme.colors.inputBg,
                   borderColor: theme.colors.divider,
+                  opacity: isExportingRatings ? 0.7 : 1,
                 },
               ]}
+              testID="export-ratings-button"
             >
               <Text style={[styles.dataButtonText, { color: theme.colors.textMain }]}>
-                导出数据 (JSON)
+                {isExportingRatings ? '导出中...' : '导出打分数据'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity

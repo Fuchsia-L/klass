@@ -48,8 +48,8 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `app/matrix.tsx` — Matrix page: 7-column weekly grid 06:00–24:00, current-time line, week navigation, ISO/semester week label.
 - `app/rating.tsx` — Rating page: loads local ratings through `useRatings`, renders `RatingHistoryList`, opens `RatingInputSheet` from the FAB with a default one-hour slot ending now, and shows a read-only detail modal on history-card press.
 - `app/rating.test.tsx` — screen tests for empty state/FAB indicator, default slot orchestration, save refresh, AsyncStorage-backed persistence, and read-only detail behavior.
-- `app/settings.tsx` — Settings page: theme picker, semester form, WHUT import entry, data management buttons.
-- `app/settings.test.tsx` — smoke test for Settings.
+- `app/settings.tsx` — Settings page: theme picker, semester form, WHUT import entry, rating JSON export action, data management buttons.
+- `app/settings.test.tsx` — settings tests for WHUT import and rating export action wiring.
 
 ### `src/features/schedule/`
 - `src/features/schedule/index.ts` — public barrel exporting components, hooks, services, storage, helpers, types, and import helpers.
@@ -124,6 +124,8 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `src/features/settings/index.ts` — barrel exporting `useSettingsForm`.
 - `hooks/useSettingsForm.ts` — form state for semester + theme, plus `resetAll`.
 - `services/settings.service.ts` — `loadSettings`, `saveSemesterSettings`, `clearAllData`.
+- `services/rating-export.service.ts` — rating JSON export helper: loads via `ratings.service.exportRatings()`, serializes complete `TimeSlotRating[]` records, uses optional `expo-sharing` + `expo-file-system` when available, and falls back to React Native `Share.share`.
+- `services/rating-export.service.test.ts` — export serialization and share-path tests.
 
 ### `src/features/rating/` — **NEW (Phases 1–3)**
 - `src/features/rating/index.ts` — public barrel exporting rating components (`EfficiencySlider`, `RatingHistoryList`, `RatingInputSheet`, `StarRating`), `useRatings` hook, rating service APIs (`createRating`, `createRatingService`, `exportRatings`, `getRating`, `listPendingSyncRatings`, `listRatings`, `markRatingSynced`, `removeRating`, `subscribeToRatingChanges`, `updateRating`), service input/export types (`RatingInput`, `RatingUpdateInput`, `RatingsExportData`), repository class/singleton (`LocalRatingRepository`, `localRatingRepository`), `RatingRepository` type, and rating domain types.
@@ -268,6 +270,10 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `loadSettings(): Promise<{ semester: SemesterConfig | null }>` — Callers: `useSettingsForm`.
 - `saveSemesterSettings(config: SemesterConfig): Promise<void>` — Callers: `useSettingsForm`.
 - `clearAllData(): Promise<void>` — wipes all `STORAGE_KEYS` and resets schedule+semester listeners. Callers: `useSettingsForm.resetAll`.
+- `serializeRatingRecords(ratings: readonly TimeSlotRating[]): string` — JSON stringifier for complete rating records. Callers: `rating-export.service.test.ts`, `serializeRatingsExportData`.
+- `serializeRatingsExportData(exportData: RatingsExportData): string` — serializes the service export payload's `ratings` records as JSON. Caller: `exportLocalRatingsAsJson`.
+- `shareRatingsJson(json, adapters?)` — shares rating JSON through optional Expo Sharing + file cache when available; otherwise falls back to React Native `Share.share({ message: json })`. Callers: `exportLocalRatingsAsJson`, tests.
+- `exportLocalRatingsAsJson(adapters?): Promise<{ count; json; method }>` — loads ratings through `ratings.service.exportRatings()`, serializes them, shares them, and returns export metadata. Caller: `app/settings.tsx`.
 
 ### Rating — `src/features/rating/` **(established in Phases 1–3)**
 
@@ -290,7 +296,7 @@ Service — `src/features/rating/services/ratings.service.ts`:
 - `removeRating(id: string): Promise<void>` — delegates to `repository.remove`, notifies. Callers: `useRatings.remove`.
 - `listPendingSyncRatings(): Promise<TimeSlotRating[]>` — delegates to `repository.listPendingSync`. Callers: future sync code / tests.
 - `markRatingSynced(id: string, syncedAt?: string): Promise<void>` — defaults `syncedAt` to `new Date().toISOString()`, delegates to `repository.markSynced`, notifies. Callers: future sync code / tests.
-- `exportRatings(): Promise<RatingsExportData>` — wraps `repository.list()` with `exported_at` + `schema_version: 1`. Callers: future settings export action / tests.
+- `exportRatings(): Promise<RatingsExportData>` — wraps `repository.list()` with `exported_at` + `schema_version: 1`. Callers: `rating-export.service.ts`, tests.
 - `subscribeToRatingChanges(listener: () => void): () => void` — registers listener; lazily subscribes to `repository.subscribe` when available so storage-level mutations propagate to UI. Callers: `useRatings`.
 
 Hook — `src/features/rating/hooks/useRatings.ts`:
@@ -388,7 +394,7 @@ ThemeProvider (app/_layout.tsx)
   → components read colors/fonts/radius
 ```
 
-### Rating flow (storage + service + hook + tab UI live; settings export arrives in later phases)
+### Rating flow
 ```
 RatingTab / event-completion entry
   → RatingInputSheet (StarRating + EfficiencySlider + DateTimePicker)
@@ -412,6 +418,17 @@ History card press in `app/rating.tsx`
 
 The repository interface is the seam that keeps service code decoupled from AsyncStorage. A future `RemoteRatingRepository` or `SyncingRatingRepository` can replace `LocalRatingRepository` without touching the service / hook / UI layers. The service-level `subscribeToRatingChanges` lazily attaches to `repository.subscribe` so storage mutations from any source (e.g. background sync) propagate to UI.
 
+### Rating export flow
+```
+SettingsScreen "导出打分数据"
+  → features/settings/services/rating-export.service.ts
+      → features/rating/services/ratings.service.ts exportRatings()
+      → RatingRepository.list()
+      → serialize complete TimeSlotRating[] records as JSON
+      → expo-sharing + expo-file-system when installed and available
+      → React Native Share.share fallback
+```
+
 ---
 
 ## 4. Dependencies
@@ -428,8 +445,8 @@ Dev / test:
 - `typescript` — static typing.
 - `jest`, `jest-expo`, `@testing-library/react-native`, `react-test-renderer`, `@types/jest`, `@types/react` — test harness.
 
-Future (not yet installed, referenced in rating spec):
-- `expo-sharing` (optional) — preferred for JSON export; fallback to RN `Share.share` if unavailable (wired in Phase 5).
+Optional:
+- `expo-sharing` + `expo-file-system` — preferred file-based JSON export when installed and available; `rating-export.service.ts` falls back to RN `Share.share` when either module is unavailable.
 
 ---
 
@@ -439,3 +456,4 @@ Future (not yet installed, referenced in rating spec):
 - **Phase 2 — Rating Service & Hook**: added repository-injected `ratings.service.ts` exposing `createRatingService` factory + default singleton (UUID id generation, default slot window, ISO timestamps, rating/efficiency 1–5 validation, optional field length caps, sync helpers, `exportRatings()` JSON payload, listener bridging via `repository.subscribe`). Added `useRatings` hook (loading/error/refresh/save/remove with mount-safety and auto-refresh on service notifications). Extended `LocalRatingRepository` with a `subscribe` method that forwards storage listeners. Updated `src/features/rating/index.ts` to export the new hook and service surface, and added service tests backed by a fake `RatingRepository`.
 - **Phase 3 — Core Rating UI Components**: added `StarRating`, `EfficiencySlider`, `RatingInputSheet` (reuses shared `DateTimePicker` from the schedule feature), and `RatingHistoryList` under `src/features/rating/components`, plus the locked 50-item `EMPTY_STATE_QUIPS` copy pool and `pickRandomQuip` helper under `src/features/rating/copy`. Promoted the rating section heading from "Phases 1–2" to "Phases 1–3" and re-exported the new components from rating barrels. Added component smoke tests and quip contract tests covering input interaction, sheet field caps/payload shape, grouped-by-date history rendering, mount-stable empty-state quip, quip count, and picker membership.
 - **Phase 4 — Rating Tab Integration**: added `app/rating.tsx` and wired it into Expo Router tabs between `MATRIX` and `SETTINGS` using the lucide `Star` icon and existing tab style options. The rating screen uses `useRatings` + `RatingHistoryList`, opens `RatingInputSheet` from the shared FAB with a current-time-minus-one-hour default slot, saves through the hook so history updates immediately, reads persisted AsyncStorage ratings on mount, and opens a read-only detail modal from history cards. Added layout and rating screen tests for tab order/icon, empty state, default slot orchestration, save refresh, persistence reload, and read-only details.
+- **Phase 5 — JSON Export from Settings**: replaced the placeholder settings export action with `导出打分数据`, backed by `src/features/settings/services/rating-export.service.ts`. The helper loads records through `ratings.service.exportRatings()` rather than storage, serializes complete `TimeSlotRating[]` records including rating/efficiency/timestamps/schema/sync fields, prefers optional Expo Sharing + file cache when available, and falls back to React Native `Share.share`. Added settings action tests plus helper tests for empty arrays, optional fields/emoji/long strings, service-backed loading, Expo Sharing, and fallback sharing.
