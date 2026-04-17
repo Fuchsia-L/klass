@@ -1,5 +1,3 @@
-The doc is largely accurate. I'll output the complete updated version with the section labels promoted from "Phases 1–2" to "Phases 1–3" to reflect Phase 3's contribution.
-
 # CyberSchedule RN — Architecture
 
 Single source of truth for all agents (coders and reviewers). Keep this file in sync with the code: if a symbol exists, it must be listed here; if it is listed here, it must exist.
@@ -127,7 +125,7 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `services/rating-export.service.ts` — rating JSON export helper: loads via `ratings.service.exportRatings()`, serializes complete `TimeSlotRating[]` records, uses optional `expo-sharing` + `expo-file-system` when available, and falls back to React Native `Share.share`.
 - `services/rating-export.service.test.ts` — export serialization and share-path tests.
 
-### `src/features/rating/` — **NEW (Phases 1–3)**
+### `src/features/rating/` — **NEW (Phases 1–5)**
 - `src/features/rating/index.ts` — public barrel exporting rating components (`EfficiencySlider`, `RatingHistoryList`, `RatingInputSheet`, `StarRating`), `useRatings` hook, rating service APIs (`createRating`, `createRatingService`, `exportRatings`, `getRating`, `listPendingSyncRatings`, `listRatings`, `markRatingSynced`, `removeRating`, `subscribeToRatingChanges`, `updateRating`), service input/export types (`RatingInput`, `RatingUpdateInput`, `RatingsExportData`), repository class/singleton (`LocalRatingRepository`, `localRatingRepository`), `RatingRepository` type, and rating domain types.
 - `src/features/rating/types.ts` — `RatingValue`, `TimeSlotRating` entity.
 - `src/features/rating/components/index.ts` — component barrel.
@@ -275,7 +273,7 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `shareRatingsJson(json, adapters?)` — shares rating JSON through optional Expo Sharing + file cache when available; otherwise falls back to React Native `Share.share({ message: json })`. Callers: `exportLocalRatingsAsJson`, tests.
 - `exportLocalRatingsAsJson(adapters?): Promise<{ count; json; method }>` — loads ratings through `ratings.service.exportRatings()`, serializes them, shares them, and returns export metadata. Caller: `app/settings.tsx`.
 
-### Rating — `src/features/rating/` **(established in Phases 1–3)**
+### Rating — `src/features/rating/` **(established in Phases 1–5)**
 
 Types — `src/features/rating/types.ts`:
 - `RatingValue = 1 | 2 | 3 | 4 | 5`.
@@ -457,3 +455,22 @@ Optional:
 - **Phase 3 — Core Rating UI Components**: added `StarRating`, `EfficiencySlider`, `RatingInputSheet` (reuses shared `DateTimePicker` from the schedule feature), and `RatingHistoryList` under `src/features/rating/components`, plus the locked 50-item `EMPTY_STATE_QUIPS` copy pool and `pickRandomQuip` helper under `src/features/rating/copy`. Promoted the rating section heading from "Phases 1–2" to "Phases 1–3" and re-exported the new components from rating barrels. Added component smoke tests and quip contract tests covering input interaction, sheet field caps/payload shape, grouped-by-date history rendering, mount-stable empty-state quip, quip count, and picker membership.
 - **Phase 4 — Rating Tab Integration**: added `app/rating.tsx` and wired it into Expo Router tabs between `MATRIX` and `SETTINGS` using the lucide `Star` icon and existing tab style options. The rating screen uses `useRatings` + `RatingHistoryList`, opens `RatingInputSheet` from the shared FAB with a current-time-minus-one-hour default slot, saves through the hook so history updates immediately, reads persisted AsyncStorage ratings on mount, and opens a read-only detail modal from history cards. Added layout and rating screen tests for tab order/icon, empty state, default slot orchestration, save refresh, persistence reload, and read-only details.
 - **Phase 5 — JSON Export from Settings**: replaced the placeholder settings export action with `导出打分数据`, backed by `src/features/settings/services/rating-export.service.ts`. The helper loads records through `ratings.service.exportRatings()` rather than storage, serializes complete `TimeSlotRating[]` records including rating/efficiency/timestamps/schema/sync fields, prefers optional Expo Sharing + file cache when available, and falls back to React Native `Share.share`. Added settings action tests plus helper tests for empty arrays, optional fields/emoji/long strings, service-backed loading, Expo Sharing, and fallback sharing.
+- **Phase 6 — Documentation & Final Verification**: updated this architecture document to describe the final local-first rating file tree, API contracts, data flow through `RatingRepository` / `LocalRatingRepository` / `ratings.storage.ts`, export behavior, and v1 limitations. Final acceptance requires `npm test`, TypeScript validation, Expo start/bundling validation, Android APK validation via the documented Gradle command, and the manual rating persistence/export checklist below.
+
+---
+
+## 6. MVP Acceptance Notes
+
+### Manual rating checklist
+- Add a rating from the `RATING` tab FAB using rating, efficiency, optional activity, mood, and reflection fields.
+- Kill the app process and reopen it.
+- Confirm the saved rating still appears in recent history.
+- Open `SETTINGS` and run `导出打分数据`.
+- Verify the shared JSON is an array of complete `TimeSlotRating` records with `id`, `slot_start`, `slot_end`, `rating`, `efficiency`, `created_at`, `updated_at`, `synced_at`, and `schema_version: 1` fields, plus any optional `activity`, `mood`, `reflection`, or `linked_event_id` values that were saved.
+
+### Known v1 limitations
+- No cloud sync implementation yet; sync-related fields and APIs are extension points only.
+- No MCP endpoint or server API for rating records.
+- No widget entry point for creating or viewing ratings.
+- No AI summary or analysis of rating history.
+- No edit flow exposed in the v1 UI; history card details are read-only.
