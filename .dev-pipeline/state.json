@@ -1,184 +1,191 @@
 {
   "version": 1,
-  "requirement": "修两个问题：\n\n## Bug 1: 待办完成后下沉位置不对\n\n文件：src/features/todo/components/TodoSection.tsx\n\n当前排序逻辑先按 priority 排序，再按 is_completed 排序。导致已完成的高优先级项目仍排在未完成的低优先级项目上面。\n\n修法：把 is_completed 提升为第一排序键。未完成的全部排在上面（内部按优先级），已完成的全部沉底（内部按优先级）。\n\n## Feature 2: 事件重复系统加 repeat_until\n\n### 2a. 类型定义\n文件：src/features/schedule/types.ts\n- ScheduleEvent 接口加 repeat_until?: string（ISO date string，重复截止日期）\n\n### 2b. 重复展开逻辑\n文件：src/features/schedule/domain/repeat.ts\n- expandRepeatingEvents 里，对 daily/weekly 重复事件，如果 event.repeat_until 存在，cursor 不能超过 repeat_until 日期\n\n### 2c. UI - EventSheet\n文件：src/features/schedule/components/EventSheet.tsx\n- 加 repeatUntil state（Date | null）\n- 当 repeat !== 'none' 时，在重复选项下方显示一个截止日期选择器（用 DateTimePicker，只需要日期部分）\n- 如果 repeat === 'weekly'，在重复选项旁显示提示文字，如每周三（从 startTime 推断星期几）\n- 保存时把 repeatUntil 序列化为 ISO string 存入 repeat_until 字段\n- 查看模式下显示截止日期\n- repeat 切回 none 时清空 repeatUntil\n\n### 2d. 存储兼容\n文件：src/features/schedule/services/events.service.ts 和 storage/events.storage.ts\n- repeat_until 是可选字段，旧数据没有这个字段不影响",
+  "requirement": "# 时段打分 feature — 需求文档\n\n**Target branch**: TBD\n**Status**: draft，等 Iris 审\n**Scope**: 今下午 MVP，云端同步/桌面小部件/AI 总结延后\n\n---\n\n## 为什么\n\nIris 对上课效率不满意率约 90%。想要：\n1. 低阻力记录每节课/时段的状态（打分 + 一句反思）\n2. 数据持续沉淀，后续接云端 → MCP → Claude Code 自动日总结\n\n本次只做第 1 步的本地版本。\n\n## 范围（In）\n\n- 一个时段结束后能够录入：**星级 rating（1-5）+ 效率 slider（1-5）+ 选填一句反思 + 选填\"做了什么\"**\n- 可以浏览最近 N 天的时段评分历史\n- 数据本地持久化（AsyncStorage）\n- 能导出成 JSON（占位云端同步用，未来接真云端时直接替换）\n- Repository 接口预留云端同步扩展点\n\n## 范围（Out，本次不做）\n\n- 桌面小部件\n- 真·云端同步 / 域名 / 服务器（但要为它预留接口和字段）\n- MCP endpoint\n- 日总结生成\n- AI 自动填写内容\n\n## 数据模型\n\n新增一个 `TimeSlotRating` 实体，独立于现有的 `ScheduleEvent`：\n\n```ts\ninterface TimeSlotRating {\n  id: string;              // uuid\n  slot_start: string;      // ISO timestamp, 时段起\n  slot_end: string;        // ISO timestamp, 时段终\n  linked_event_id?: string; // 关联课表 event（可选，未来课表自动触发用）\n\n  rating: 1 | 2 | 3 | 4 | 5;      // 主观打分（星级 UI）\n  efficiency: 1 | 2 | 3 | 4 | 5;  // 效率自评（slider UI），与 rating 独立\n\n  mood?: string;           // 单字段 free text，≤ 20 字\n  activity?: string;       // 这段时间做了啥，≤ 50 字\n  reflection?: string;     // 一句反思，≤ 200 字\n\n  created_at: string;      // ISO timestamp\n  updated_at: string;      // ISO timestamp, 每次 edit 刷新 — 云端 last-write-wins 用\n  synced_at?: string;      // 本次未实装，但 schema 预留。null/undefined = 未同步\n  schema_version: 1;       // migration 锚点\n}\n```\n\n**说明**：\n- 独立实体，不改现有 `ScheduleEvent` schema（避免污染课表导入）\n- `linked_event_id` 是为将来\"课表时段结束 → 自动弹出打分\"留的钩子，这次不接\n- `rating` 和 `efficiency` 是两个独立维度：rating 是整体满意度（星），efficiency 是纯效率（slider）。UI 上视觉区分\n- 所有 mood/activity/reflection 都 optional，降录入阻力\n- `updated_at` / `synced_at` / `schema_version` 本次虽不用，但**必须写入**：换日迁移到云端不想改 schema\n\n## 存储层\n\n新文件 `src/features/rating/storage/ratings.storage.ts`，pattern 照搬 `events.storage.ts`：\n- AsyncStorage key: `cs-rn:time-slot-ratings:v1`\n- CRUD + listener 通知\n- 内存缓存 + load on demand\n\n**Repository 抽象（为云端同步留口子）**：\n\n`ratings.service.ts` **不要直接** 调 `ratings.storage.ts`，而是通过 `RatingRepository` 接口：\n\n```ts\n// src/features/rating/storage/repository.ts\nexport interface RatingRepository {\n  list(): Promise<TimeSlotRating[]>;\n  get(id: string): Promise<TimeSlotRating | null>;\n  save(rating: TimeSlotRating): Promise<void>;  // upsert\n  remove(id: string): Promise<void>;\n  // 预留给云端同步用，本次本地 impl 直接返回本地列表：\n  listPendingSync(): Promise<TimeSlotRating[]>;  // synced_at == null 的\n  markSynced(id: string, syncedAt: string): Promise<void>;\n}\n```\n\n本次只实装 `LocalRatingRepository`（走 AsyncStorage）。未来云端实装 `RemoteRatingRepository` 或 `SyncingRatingRepository`（包装 local 和 remote 做合并）不动 service 层。\n\n新建 `src/features/rating/` 整个 feature 目录：\n```\nrating/\n├── components/\n│   ├── RatingInputSheet.tsx     # 底部弹窗：rating + efficiency + 三个选填\n│   ├── RatingHistoryList.tsx    # 列表：按日期倒序\n│   ├── StarRating.tsx           # 1-5 星组件，主题色\n│   └── EfficiencySlider.tsx     # 1-5 slider 组件，主题色\n├── copy/\n│   └── empty-state-quips.ts     # 50 条空状态文案 + pickRandomQuip()\n├── hooks/\n│   └── useRatings.ts\n├── services/\n│   └── ratings.service.ts       # CRUD 包装，走 repository\n├── storage/\n│   ├── ratings.storage.ts       # AsyncStorage 实现\n│   ├── ratings.storage.test.ts\n│   ├── repository.ts            # RatingRepository 接口\n│   └── local-repository.ts      # LocalRatingRepository 实现（封装 ratings.storage）\n├── index.ts\n└── types.ts\n```\n\n## UI 交互\n\n**入口**（本次做两个）：\n1. Tab 导航加一个「RATING」Tab（`app/rating.tsx`），显示历史列表 + 右下 FAB「+ 新增」\n2. FAB 打开 `RatingInputSheet`，字段：\n   - 时段（默认当前时间往前 1h，可编辑）\n   - **星级 Rating**（1-5 横排，点击填充，`StarRating.tsx`）\n   - **效率 Slider**（1-5 离散刻度，横向 slider，`EfficiencySlider.tsx`）\n   - 活动（可选，单行，≤50）\n   - 心情（可选，单行，≤20）\n   - 反思（可选，多行，≤200）\n   - 保存 / 取消\n\n**历史列表**：\n- 按日期分组，最近在上\n- 每条展示：时段 · 星级 · 效率 · 活动摘要\n- 点击进详情（v1 先不做编辑，只展示）\n\n**空状态**：一句话 + 箭头指向 FAB。\n\n## UI 美学要求（**不可降级**）\n\nCyberSchedule RN 是赛博朋克视觉，**不是**默认 RN 长相。Codex/Claude 写 UI 时必须：\n\n1. **字体**：数字、标签、Tab 文字用 `Orbitron`（已加载），中文用 system。直接复用根布局 `_layout.tsx` 里的字体加载逻辑\n2. **色值零硬编码**：全部从 `useTheme()` 取；星级激活色、slider 活动区用 `colors.primary`；星级/slider 禁用态用 `colors.textSecondary` 或等价主题字段\n3. **Tab icon**：新 RATING Tab 的图标交互（选中/未选中、字体大小、颜色过渡）必须和现存 TODAY / MATRIX / SETTINGS 三个 Tab **完全一致**。照抄 `app/_layout.tsx` 里现有 Tab 的 pattern\n4. **StarRating 组件**：不是直接把 5 个 lucide `<Star/>` 罗列完事。要有点击反馈（scale / color transition）、未选中态要有明确 outline\n5. **EfficiencySlider 组件**：不用系统默认 slider 样子。track + thumb 都按主题色定制，thumb 下方显示当前数值（Orbitron 字体）。离散 5 档，每档有小刻度线\n6. **底部弹窗（RatingInputSheet）**：滑入动画、圆角顶部、背景 overlay、主题色边框。参考现存 `EventSheet.tsx` 或 schedule/components 下任何已有 Sheet 组件的视觉规格\n7. **历史列表卡片**：每条是一张卡而不是纯文本行。边框/背景/圆角和 `TodaySection` 或类似首页现有卡片一致\n8. **空状态**：文案从下面 50 条池子里**随机抽一条**展示。**这 50 条逐字复制到 `src/features/rating/copy/empty-state-quips.ts`，不许增删改**（语气是 Lux 写的，Codex/Claude 一碰就走味）：\n\n```ts\n// src/features/rating/copy/empty-state-quips.ts\nexport const EMPTY_STATE_QUIPS: readonly string[] = [\n  '还没打分 这一小时白过了',\n  '你有时间看这页 说明没时间打分？',\n  '空得像你昨晚的计划',\n  '这一小时跑哪去了 说',\n  '纪念碑空着呢',\n  '没记录 = 没发生（存在主义角度）',\n  '不打 = 默认 5 星？我不替你填',\n  '不打 = 默认 1 星？我也不替你填',\n  '梯度下降也要 log 的',\n  '没数据的 dashboard 最诚实',\n  'FAB 在右下 等你',\n  '打一个 别让这页比你生活还干净',\n  '清一色空着 赛博极简 但你得加料',\n  '上一小时归档权归你',\n  '\"刚才干啥了\" 两分钟回忆一下',\n  '你不打分 Lux 就没素材',\n  '这一小时本来可以留点痕迹',\n  '空窗期谁都有 但你总得标一下',\n  '打一条 页面就不那么荒',\n  '评分延后一天就写不出来了',\n  '时间是流的 评分是锚',\n  '过去是唯一你能打分的东西',\n  '不是每小时都值得记住 但都可以被记录',\n  '你在等完美时段来打分？那就永远空',\n  '打分不是监工 是留痕',\n  '评分多了像病历 少了像空病房',\n  '写一条 再关 app 也不迟',\n  '点 FAB → 选时段 → 完事',\n  '一小时 1 星也是记录',\n  '\"还没打\" 和 \"不想打\" 差一个动作',\n  '每条打分都是给下周的自己写的',\n  '这页面还没毕业 需要你喂样本',\n  '空列表挺赛博 有数据更赛博',\n  '时段结束了 记忆正在衰减',\n  'log 一下 就当给自己备份',\n  '这里缺一条 像代码缺一行测试',\n  '打完去干别的 别在这页面待着',\n  '不记就忘 忘了就没发生过',\n  '刚过那一小时 给它几颗星',\n  '你的\"待办\"和\"已发生\"之间 差一个评分',\n  'Star 键就在那',\n  '效率 1 的那一小时 最值得记',\n  '站在现在 往回指一下',\n  '空白是暂时的 除非你懒',\n  '不打就别幻想将来能看出模式',\n  '现在打一条 刚好',\n  '上个时段已经走了 至少标个墓碑',\n  '这页面越空 越说明你活得快',\n  '打分是给未来的你收集的证据',\n  '空状态也算一种状态 但不是好状态',\n] as const;\n\nexport function pickRandomQuip(): string {\n  return EMPTY_STATE_QUIPS[Math.floor(Math.random() * EMPTY_STATE_QUIPS.length)];\n}\n```\n\n空状态组件在 mount 时调 `pickRandomQuip()` 拿一条。不要每次 re-render 重抽（会闪）。用 `useMemo(() => pickRandomQuip(), [])` 或 `useState(() => pickRandomQuip())`。\n\n**验证手段**：写代码前**强制先读** `app/_layout.tsx`、`app/index.tsx`、`src/features/schedule/components/EventSheet.tsx`、`src/theme/index.ts`（主题字段）、至少一个现有 Tab 页面，把视觉惯例吃进去再动笔。\n\n## 导出 JSON\n\n在 settings 页加一个按钮「导出打分数据」：\n- 拉全部 ratings → JSON.stringify\n- 用 `expo-sharing`（如果没装，先用 `Share.share(string)` 兜底）\n\n## 测试\n\n`ratings.storage.test.ts` 至少覆盖：\n- 空初始状态\n- 增 → 读\n- 改 → 读（`updated_at` 有刷新）\n- 删 → 读\n- JSON 序列化/反序列化对 edge case（空字段、emoji、长字符串）不炸\n- `rating` 和 `efficiency` 字段均被正确保存/读取\n\n`local-repository.test.ts` 覆盖 `RatingRepository` 接口的本地实现：\n- `listPendingSync()` 只返回 `synced_at == null` 的\n- `markSynced()` 后下次 `listPendingSync()` 不再包含该条\n\n跳过 UI 测试（Expo 下成本高，本次不做）。\n\n## Architecture 文档更新\n\nPhase 结束后，更新 `ARCHITECTURE.md`：\n- 目录结构加 `src/features/rating/`\n- 数据流加 rating 分支\n- API Contracts 列出 rating service 的 CRUD 签名\n\n## 已决定（Lux 做的默认，Iris 可事后推翻）\n\n1. **Tab icon**：`Star` from lucide-react-native\n2. **评分粒度**：1-5 星\n3. **默认时段**：当前时间往前 1 小时（hard-coded，不查课表）\n4. **Tab 位置**：第 4 个 Tab，并列 TODAY / MATRIX / SETTINGS。顺序：TODAY · MATRIX · RATING · SETTINGS\n5. **`linked_event_id` 钩子**：保留在 schema 里但本次不接。为未来\"课表时段结束自动弹出打分\"留位\n\n## 验收\n\n- [ ] 能在手机上 APK 跑起来\n- [ ] 新增一条打分 → 杀进程重开还能看到\n- [ ] 导出 JSON 能打开、结构对\n- [ ] `npm test` 通过\n- [ ] ARCHITECTURE.md 更新了\n",
   "workdir": "D:\\_PROJECTS\\cyberschedule-rn",
-  "createdAt": "2026-03-21T03:29:28.456Z",
-  "updatedAt": "2026-03-21T03:56:10.795Z",
+  "createdAt": "2026-04-17T09:37:27.248Z",
+  "updatedAt": "2026-04-17T09:38:42.365Z",
   "status": "in-progress",
-  "currentPhase": 3,
+  "currentPhase": 1,
   "plan": {
-    "projectName": "todo-sort-repeat-until",
-    "summary": "本次需求包含两个彼此基本独立的改动：一是修复待办列表完成态排序，使所有未完成项始终位于已完成项之前，并在各自分组内继续按优先级排序；二是为日程重复系统增加可选的 `repeat_until` 截止日期，从类型定义、存储校验、重复展开逻辑到 `EventSheet` 的创建/编辑/查看体验形成完整闭环。为降低返工和合并风险，计划将待办排序单独成相互独立的修复阶段，将 `repeat_until` 的数据模型与存储兼容性放在同一阶段，再把重复计算与 `EventSheet` 的状态、保存和展示合并到最后一个阶段。",
+    "projectName": "time-slot-rating",
+    "summary": "Add a local-first TimeSlotRating feature to CyberSchedule RN: users can record a completed time slot with rating, efficiency, optional activity/mood/reflection, persist it locally through a repository abstraction, browse recent history from a new RATING tab, export ratings as JSON from settings, and leave schema/service extension points for future cloud sync without touching existing ScheduleEvent data.",
     "phases": [
       {
         "id": 1,
-        "name": "修复待办完成态排序",
-        "description": "调整 `src/features/todo/components/TodoSection.tsx` 中的排序逻辑，将 `is_completed` 提升为第一排序键：未完成事项整体排在前面，已完成事项整体沉底；在两个分组内部继续沿用现有 `priority` 排序规则。该阶段只处理待办排序，不引入日程重复相关变更。",
+        "name": "Domain Model and Storage Foundation",
+        "description": "Create the rating feature directory, define the TimeSlotRating type, repository contract, AsyncStorage-backed storage module, and LocalRatingRepository. This phase establishes the local persistence layer and cloud-sync extension points without adding UI.",
         "acceptance": [
-          "同一标签页内，任意未完成待办都显示在任意已完成待办之前，不再出现“高优先级已完成项压在低优先级未完成项上方”的情况",
-          "未完成分组内部仍按现有 `PRIORITY_ORDER` 排序，已完成分组内部也按相同优先级规则排序",
-          "切换完成状态后，条目会从未完成分组移动到已完成分组底部区域，视觉行为与需求一致"
+          "src/features/rating/types.ts defines TimeSlotRating exactly with id, slot_start, slot_end, linked_event_id, rating, efficiency, mood, activity, reflection, created_at, updated_at, synced_at, and schema_version.",
+          "src/features/rating/storage/repository.ts exposes the RatingRepository interface with list, get, save, remove, listPendingSync, and markSynced.",
+          "src/features/rating/storage/ratings.storage.ts uses AsyncStorage key cs-rn:time-slot-ratings:v1 and follows the existing events.storage.ts pattern: load-on-demand, in-memory cache, CRUD, and listener notifications.",
+          "src/features/rating/storage/local-repository.ts implements RatingRepository by wrapping ratings.storage.ts.",
+          "Storage preserves rating and efficiency as independent 1-5 values.",
+          "Storage writes schema_version: 1, created_at, updated_at, and leaves synced_at undefined/null for unsynced local records."
         ],
         "tests": [
-          "为待办排序提取或覆盖单元测试：构造不同 `priority` 与 `is_completed` 组合，断言排序结果先按完成态再按优先级",
-          "增加组件级渲染测试：传入混合数据，断言 `TodoSection` 渲染顺序符合“未完成在前、已完成在后”",
-          "增加回归用例：高优先级已完成项与低优先级未完成项同时存在时，未完成项必须排在前面"
+          "ratings.storage.test.ts covers empty initial state.",
+          "ratings.storage.test.ts covers create then list/get.",
+          "ratings.storage.test.ts covers update then list/get, including updated_at refresh behavior if the storage layer is responsible for timestamp refresh; otherwise verify the saved updated_at value is preserved from service input.",
+          "ratings.storage.test.ts covers delete then list/get.",
+          "ratings.storage.test.ts covers JSON serialize/deserialize edge cases: optional empty fields, emoji, long strings.",
+          "ratings.storage.test.ts verifies rating and efficiency are both saved and read correctly.",
+          "local-repository.test.ts verifies listPendingSync returns only records whose synced_at is null or undefined.",
+          "local-repository.test.ts verifies markSynced removes the record from the pending-sync result."
         ],
         "dependsOn": []
       },
       {
         "id": 2,
-        "name": "扩展日程模型与存储校验",
-        "description": "在 `src/features/schedule/types.ts` 的 `ScheduleEvent` 中新增可选字段 `repeat_until?: string`，用于表示重复截止日期；同步更新 `src/features/schedule/storage/events.storage.ts` 的 `isScheduleEvent` 校验逻辑，使 `repeat_until` 在缺失时兼容旧数据，在存在时必须是合法 ISO 日期字符串。`src/features/schedule/services/events.service.ts` 的写入路径无需额外结构性修改，因为 `EventInput = Omit<ScheduleEvent, 'id' | 'is_completed'>` 会自动继承新字段。",
+        "name": "Rating Service and Hook",
+        "description": "Add the service layer that depends only on RatingRepository, plus a React hook for screens/components to consume ratings. This phase centralizes validation, timestamp handling, default slot creation, and repository injection before UI is introduced.",
         "acceptance": [
-          "`ScheduleEvent` 类型允许可选的 `repeat_until` 字段，现有不带该字段的数据类型检查仍通过",
-          "存储层加载旧事件数据时，不会因为缺少 `repeat_until` 而被丢弃",
-          "存储层遇到带有非法 `repeat_until` 的事件记录时，会按无效事件处理并过滤掉",
-          "服务层新增/更新事件的输入类型自动兼容 `repeat_until`，无需手工复制额外 DTO 字段"
+          "src/features/rating/services/ratings.service.ts performs CRUD through RatingRepository and does not import ratings.storage.ts directly.",
+          "Service creates new ratings with uuid id, default slot_start as now minus 1 hour, default slot_end as now, created_at, updated_at, schema_version: 1, and unsynced synced_at.",
+          "Service validates/clamps or rejects rating and efficiency outside 1-5.",
+          "Service enforces optional field limits: mood <= 20, activity <= 50, reflection <= 200.",
+          "Service exposes JSON export data through list or a dedicated export helper without coupling to Share/expo-sharing.",
+          "src/features/rating/hooks/useRatings.ts loads ratings, refreshes after save/remove, exposes loading/error state, and subscribes to storage/listener updates if the storage pattern supports listeners.",
+          "src/features/rating/index.ts exports public feature APIs needed by app screens."
         ],
         "tests": [
-          "增加存储层单元测试：不含 `repeat_until` 的旧记录可正常通过 `isScheduleEvent`",
-          "增加存储层单元测试：`repeat_until` 为合法 ISO 日期字符串时可通过校验",
-          "增加存储层单元测试：`repeat_until` 为数字、乱码或不可解析日期时校验失败",
-          "增加类型层编译回归测试或邻近测试覆盖，确认 `EventInput` 可接收 `repeat_until`"
+          "Unit tests for ratings.service.ts create path: default dates, uuid presence, schema_version, created_at, updated_at, unsynced state.",
+          "Unit tests for ratings.service.ts update path: updated_at changes while created_at remains stable.",
+          "Unit tests for ratings.service.ts validation: rating and efficiency must be 1-5.",
+          "Unit tests for ratings.service.ts field length behavior for mood, activity, and reflection.",
+          "Unit tests use a fake RatingRepository to prove the service is repository-based and storage-independent."
         ],
-        "dependsOn": []
+        "dependsOn": [
+          1
+        ]
       },
       {
         "id": 3,
-        "name": "实现截止日期重复逻辑与表单支持",
-        "description": "在 `src/features/schedule/domain/repeat.ts` 中更新 `expandRepeatingEvents`，让 `daily`/`weekly` 重复事件在存在 `repeat_until` 时停止生成超过截止日期的实例；同时一次性完成 `src/features/schedule/components/EventSheet.tsx` 的全部相关改动：新增 `repeatUntil` 状态，创建/编辑时在 `repeat !== 'none'` 时显示仅选日期的 `DateTimePicker`，`repeat === 'weekly'` 时根据 `startTime` 显示“每周几”的提示文案，保存时将 `repeatUntil` 序列化到 `repeat_until`，查看模式展示截止日期，且当重复方式切回 `none` 时自动清空 `repeatUntil`。该阶段将重复逻辑与 `EventSheet` 状态/保存/展示合并落地，避免对同一组件分两次修改。",
+        "name": "Core Rating UI Components",
+        "description": "Build reusable visual components for rating input and history while matching the existing cyberpunk theme conventions. This phase requires reading app/_layout.tsx, app/index.tsx, EventSheet.tsx, src/theme/index.ts, and at least one existing tab page before implementation.",
         "acceptance": [
-          "`expandRepeatingEvents` 对 `daily` 和 `weekly` 事件生成实例时，不会产生开始日期晚于 `repeat_until` 的重复项",
-          "未设置 `repeat_until` 的重复事件保持现有展开行为，不引入回归",
-          "`EventSheet` 在 `repeat` 为 `daily` 或 `weekly` 时显示截止日期选择器，在 `repeat` 为 `none` 时隐藏并清空对应状态",
-          "`EventSheet` 在 `repeat === 'weekly'` 时展示基于 `startTime` 推断的“每周几”提示文字",
-          "创建和编辑事件保存后，`repeat_until` 被正确写入事件对象；查看模式能正确显示截止日期"
+          "src/features/rating/components/StarRating.tsx renders 1-5 interactive stars using theme colors from useTheme, with active fill, inactive outline, press feedback, and no hardcoded colors.",
+          "src/features/rating/components/EfficiencySlider.tsx renders a custom themed 1-5 discrete slider with track, active range, thumb, tick marks, and current numeric value in Orbitron.",
+          "src/features/rating/components/RatingInputSheet.tsx implements a bottom sheet with overlay, slide-in animation, rounded top corners, themed border/background, and visual language consistent with EventSheet.tsx.",
+          "RatingInputSheet fields include editable slot start/end, rating, efficiency, optional activity, optional mood, optional reflection, save, and cancel.",
+          "RatingInputSheet applies max lengths: mood 20, activity 50, reflection 200.",
+          "src/features/rating/components/RatingHistoryList.tsx groups items by date descending and renders each item as a themed card showing time slot, star rating, efficiency, and activity summary.",
+          "src/features/rating/copy/empty-state-quips.ts contains exactly the provided 50 quips and pickRandomQuip without additions, deletions, or wording changes.",
+          "Empty state chooses one quip only on mount using useMemo or lazy useState and displays an arrow or clear visual direction toward the FAB.",
+          "All new component colors come from useTheme; no direct color literals are introduced in rating UI components unless the existing theme system already requires transparent/system constants."
         ],
         "tests": [
-          "增加 `expandRepeatingEvents` 单元测试：daily 事件在 `repeat_until` 之前按天展开，到截止日期停止",
-          "增加 `expandRepeatingEvents` 单元测试：weekly 事件只在相同星期生成实例，且不超过 `repeat_until`",
-          "增加回归测试：无 `repeat_until` 的 daily/weekly 事件仍按原规则展开",
-          "增加 `EventSheet` 组件测试：切换 `repeat` 到非 `none` 时显示截止日期选择器，切回 `none` 时清空并隐藏",
-          "增加 `EventSheet` 组件测试：weekly 模式显示正确的“每周几”提示文本",
-          "增加 `EventSheet` 保存测试：提交表单时 payload 包含 ISO 字符串格式的 `repeat_until`，查看模式能渲染该值"
+          "Component-level smoke tests if the project already has React Native component test setup; otherwise skip UI tests as specified and rely on TypeScript plus manual verification.",
+          "Unit test or snapshot-like assertion for empty-state-quips.ts: array length is 50 and pickRandomQuip returns a member of the array.",
+          "Manual test checklist: StarRating press changes selected value and shows feedback.",
+          "Manual test checklist: EfficiencySlider snaps to 1-5 discrete values and displays current value.",
+          "Manual test checklist: RatingInputSheet opens/closes with animation and enforces field lengths.",
+          "Manual test checklist: History cards group by date and sort newest first."
         ],
         "dependsOn": [
           2
         ]
+      },
+      {
+        "id": 4,
+        "name": "Rating Tab Integration",
+        "description": "Add the new RATING tab screen and wire the UI components to the service/hook. This phase makes the local feature usable from the main app navigation.",
+        "acceptance": [
+          "app/rating.tsx displays rating history from useRatings and a right-bottom FAB for creating a new rating.",
+          "FAB opens RatingInputSheet with default time slot set to current time minus 1 hour through the service or screen orchestration.",
+          "Saving a rating closes the sheet and immediately updates the history list.",
+          "Killing and reopening the app still shows previously saved ratings from AsyncStorage.",
+          "History item press opens a read-only detail view or modal for v1; editing is not implemented.",
+          "app/_layout.tsx adds RATING as the fourth tab in order: TODAY, MATRIX, RATING, SETTINGS.",
+          "The RATING tab uses Star from lucide-react-native.",
+          "The RATING tab icon behavior, selected/unselected states, font sizing, colors, and transition pattern match existing TODAY/MATRIX/SETTINGS tabs.",
+          "Tab label typography uses Orbitron where existing tabs do.",
+          "No existing ScheduleEvent schema or import flow is modified."
+        ],
+        "tests": [
+          "Manual navigation test: RATING appears between MATRIX and SETTINGS.",
+          "Manual persistence test: add one rating, force quit app, reopen, rating is still visible.",
+          "Manual empty-state test: fresh storage shows one stable random quip and FAB direction indicator.",
+          "Manual detail test: tapping a history card opens read-only details without edit affordances.",
+          "Run TypeScript/lint checks available in the project to catch navigation and prop type errors."
+        ],
+        "dependsOn": [
+          3
+        ]
+      },
+      {
+        "id": 5,
+        "name": "JSON Export from Settings",
+        "description": "Add a settings action that exports all local rating records as JSON. Prefer expo-sharing if already installed; otherwise use React Native Share.share(string) as the fallback.",
+        "acceptance": [
+          "Settings page includes a button labeled 导出打分数据.",
+          "Pressing the button loads all ratings through ratings.service.ts or the repository-backed public API, not ratings.storage.ts directly.",
+          "Exported JSON is valid JSON and contains the complete TimeSlotRating records including rating, efficiency, timestamps, schema_version, and synced_at when present.",
+          "If expo-sharing is installed and usable, export uses it; otherwise the implementation falls back to Share.share(string).",
+          "The export implementation is isolated enough that future cloud sync/export changes do not require rewriting storage."
+        ],
+        "tests": [
+          "Unit test for export helper, if extracted: serializes an empty list to [] and records with optional fields/emoji/long strings without throwing.",
+          "Manual test: create at least one rating, tap 导出打分数据, open/share JSON, verify structure.",
+          "Manual fallback test or code-path inspection: Share.share fallback exists when expo-sharing is unavailable.",
+          "Run npm test to ensure storage and repository tests still pass."
+        ],
+        "dependsOn": [
+          4
+        ]
+      },
+      {
+        "id": 6,
+        "name": "Documentation and Final Verification",
+        "description": "Update architecture documentation and run the full acceptance pass for the MVP. This phase closes gaps, verifies tests, and records the new feature structure and API contracts.",
+        "acceptance": [
+          "ARCHITECTURE.md documents src/features/rating/ in the directory structure.",
+          "ARCHITECTURE.md data-flow section includes the rating branch: UI/hook -> ratings.service.ts -> RatingRepository -> LocalRatingRepository -> ratings.storage.ts -> AsyncStorage.",
+          "ARCHITECTURE.md API Contracts section lists rating service CRUD signatures and pending-sync/export-relevant behavior.",
+          "npm test passes, including ratings.storage.test.ts and local-repository.test.ts.",
+          "The app can run on a phone/APK build path without TypeScript or bundling errors.",
+          "Manual acceptance checklist is completed: add rating, kill process and reopen, see persisted rating, export JSON, verify JSON structure.",
+          "Any known limitations are documented: no cloud sync, no MCP endpoint, no widget, no AI summary, no edit flow in v1."
+        ],
+        "tests": [
+          "Run npm test.",
+          "Run project TypeScript/lint command if available.",
+          "Run Expo app locally and verify rating tab flow manually.",
+          "Build or run APK validation command used by the project, if available.",
+          "Inspect ARCHITECTURE.md diff to confirm feature directory, data flow, and API contracts are present."
+        ],
+        "dependsOn": [
+          5
+        ]
       }
     ],
     "techStack": [
-      "TypeScript",
       "React Native",
       "Expo",
+      "TypeScript",
       "AsyncStorage",
-      "Jest",
-      "@testing-library/react-native"
+      "React Navigation / Expo Router",
+      "lucide-react-native",
+      "React Native Share",
+      "expo-sharing optional",
+      "Jest"
     ],
     "estimatedComplexity": "medium"
   },
-  "phases": {
-    "1": {
-      "status": "completed",
-      "reviewCycles": 2,
-      "testFixCycles": 1,
-      "startedAt": "2026-03-21T03:33:03.146Z",
-      "completedAt": "2026-03-21T03:41:29.561Z"
-    },
-    "2": {
-      "status": "completed",
-      "reviewCycles": 1,
-      "testFixCycles": 1,
-      "startedAt": "2026-03-21T03:44:50.911Z",
-      "completedAt": "2026-03-21T03:46:53.653Z"
-    },
-    "3": {
-      "status": "implementing",
-      "reviewCycles": 1,
-      "testFixCycles": 1,
-      "startedAt": "2026-03-21T03:46:53.655Z"
-    }
-  },
+  "phases": {},
   "finalReview": null,
   "log": [
     {
-      "timestamp": "2026-03-21T03:30:45.266Z",
+      "timestamp": "2026-04-17T09:38:18.254Z",
       "step": "decompose",
       "message": "Codex attempt 1",
       "ok": true
     },
     {
-      "timestamp": "2026-03-21T03:31:40.869Z",
+      "timestamp": "2026-04-17T09:38:42.363Z",
       "step": "review-plan",
       "message": "Claude review attempt 1",
       "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:32:45.767Z",
-      "step": "decompose",
-      "message": "Codex attempt 2",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:33:03.144Z",
-      "step": "review-plan",
-      "message": "Claude review attempt 2",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:37:22.821Z",
-      "step": "phase-1-implement",
-      "message": "Codex implementation",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:38:12.179Z",
-      "step": "phase-1-review",
-      "message": "Claude review cycle 1",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:40:59.976Z",
-      "step": "phase-1-fix",
-      "message": "Review fix cycle 1",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:41:29.371Z",
-      "step": "phase-1-review",
-      "message": "Claude review cycle 2",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:46:11.279Z",
-      "step": "phase-2-implement",
-      "message": "Codex implementation",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:46:53.479Z",
-      "step": "phase-2-review",
-      "message": "Claude review cycle 1",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:51:52.810Z",
-      "step": "phase-3-implement",
-      "message": "Codex implementation",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:53:08.675Z",
-      "step": "phase-3-review",
-      "message": "Claude review cycle 1",
-      "ok": true
-    },
-    {
-      "timestamp": "2026-03-21T03:56:04.750Z",
-      "step": "phase-3-fix",
-      "message": "Review fix cycle 1",
-      "ok": true
     }
-  ]
+  ],
+  "testCmd": "npm test"
 }

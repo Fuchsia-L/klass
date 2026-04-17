@@ -5,6 +5,7 @@ export const STORAGE_KEYS = {
   semester: 'cyberschedule_semester',
   theme: 'cyberschedule_theme',
   todos: 'cyberschedule_todos',
+  ratings: 'cs-rn:time-slot-ratings:v1',
 } as const;
 
 export async function loadJSON<T>(key: string): Promise<T | null> {

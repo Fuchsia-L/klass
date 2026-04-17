@@ -1,0 +1,75 @@
+{
+  "projectName": "matrix-fab-theme-enhancements",
+  "summary": "Deliver the three requested improvements in three sequential phases that align directly with the product scope: first optimize matrix week-view card density and readability with explicit height-based text rules, then make the FAB draggable using React Native's built-in Animated plus PanResponder so no new animation dependency is required, and finally add the two new themes while introducing optional theme tokens and theme-aware category colors for matrix/event cards. This decomposition resolves the prior review issues by merging the thin theme-type work into the theme phase, choosing a concrete drag implementation, defining explicit pixel thresholds from HOUR_HEIGHT=60, and avoiding the existing sakura naming collision by using internal id hanami with user-facing label Sakura 桜 while keeping the original four themes unchanged.",
+  "phases": [
+    {
+      "id": 1,
+      "name": "Optimize Matrix Card Density",
+      "description": "Refine the matrix week-view event block content renderer only, without changing the overall positioning math. Add explicit height-based display rules derived from HOUR_HEIGHT=60: events under 40px stay single-line with ellipsis at fontSize 9 and never show location; events from 40px to 80px allow up to 2 title lines at fontSize 10; events above 80px allow wrapped title text and may render a secondary location line below the title only when location exists and there is remaining vertical space after title layout. Keep padding tight so cards feel compact and do not visually spill into adjacent blocks.",
+      "acceptance": [
+        "An event block with rendered height below 40px shows a single-line truncated title, uses the compact typography rule, and does not overflow its container.",
+        "An event block with rendered height from 40px to 80px shows up to 2 title lines and remains fully contained within the existing card bounds.",
+        "An event block with rendered height above 80px shows wrapped title text, and if the event has a location plus leftover space, renders a smaller, lighter location line below the title.",
+        "Event top, height, width, tap behavior, and absolute positioning remain unchanged from the current matrix layout so no neighboring-card collision or grid regression is introduced."
+      ],
+      "tests": [
+        "Write a pure helper test for height-to-layout rules that verifies outputs for representative heights such as 30px, 60px, and 90px.",
+        "Write a matrix event rendering test with a long title and location that asserts single-line, two-line, and expanded behaviors at the three thresholds.",
+        "Write a regression render test ensuring short events remain visually contained and long events do not introduce extra card height or shift block positioning."
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": 2,
+      "name": "Add Draggable FAB",
+      "description": "Replace the fixed-position FAB behavior with a draggable floating control implemented via React Native Animated and PanResponder, explicitly avoiding react-native-reanimated because it is not currently in dependencies. Track FAB position in component state, allow free dragging within screen bounds, reduce opacity slightly during active drag, and on release snap to the nearest left or right edge while preserving the clamped vertical position. Introduce a movement threshold so a short tap still triggers the existing create-event action, but a drag gesture never does.",
+      "acceptance": [
+        "A short tap on the FAB without exceeding the movement threshold triggers the original create-event action exactly once.",
+        "Dragging the FAB moves it with the finger across the screen, keeps it inside allowed bounds, and applies a visible but subtle opacity change while dragging.",
+        "Releasing the FAB snaps it to the nearest horizontal screen edge and preserves the last valid vertical position.",
+        "After a drag completes, the FAB remains at its new position for subsequent renders within the same mounted session and does not reset until the component is recreated.",
+        "A drag interaction never triggers the create-event action."
+      ],
+      "tests": [
+        "Write a pure helper test for edge-snapping and vertical clamping logic using multiple screen positions.",
+        "Write a component interaction test that verifies a tap path calls onPress once and leaves the FAB at its original position.",
+        "Write a component interaction test that simulates movement beyond the drag threshold and verifies onPress is not called while snap logic is invoked."
+      ],
+      "dependsOn": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Add New Themes And Category Colors",
+      "description": "Extend the theming system in the same phase that introduces the new theme definitions. Add optional theme tokens needed for the new work, specifically warning as an optional color token so the existing four themes remain unchanged, and optional categoryColors keyed by CategoryKey so theme-specific schedule colors can be defined without forcing legacy backfills. Add two new themes: hanami as the internal id for the new cherry-blossom theme with user-facing label Sakura 桜, and ocean for the deep-blue theme. Each new theme provides a complete color set including warning and categoryColors for every event category. Then switch matrix event blocks and EventCard to resolve category-driven colors through the theme-aware mapping, falling back to the existing CATEGORIES colors for legacy themes so the current four themes continue to behave exactly as before.",
+      "acceptance": [
+        "The existing four themes remain present and unchanged in behavior and source values, with no required backfill of new fields.",
+        "THEME_OPTIONS expands from four entries to six entries and includes the new user-facing choices Sakura 桜 and Ocean.",
+        "ThemeConfig additions are optional, so legacy themes compile unchanged, while the two new themes define all required visual tokens including warning and a full categoryColors map.",
+        "In matrix view and EventCard, event coloring is derived from the event category rather than a uniform card background, and category hues stay distinct yet visually harmonious within each theme.",
+        "Legacy themes still render category colors correctly through fallback behavior even if they do not define categoryColors."
+      ],
+      "tests": [
+        "Write a theme registry test that verifies getTheme and THEME_OPTIONS expose six total themes and include hanami and ocean.",
+        "Write a helper test that verifies theme category-color resolution prefers theme.categoryColors when present and falls back to CATEGORIES colors for legacy themes.",
+        "Write render tests for matrix blocks or EventCard under hanami and ocean to confirm category-specific colors are applied and differ by category within the same theme.",
+        "Write a compatibility test confirming an existing theme without warning or categoryColors still resolves successfully and renders the schedule components without crashing."
+      ],
+      "dependsOn": [
+        1,
+        2
+      ]
+    }
+  ],
+  "techStack": [
+    "React Native 0.83",
+    "Expo 55",
+    "TypeScript",
+    "Jest",
+    "@testing-library/react-native",
+    "Animated API",
+    "PanResponder"
+  ],
+  "estimatedComplexity": "medium"
+}
