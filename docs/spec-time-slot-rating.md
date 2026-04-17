@@ -96,6 +96,8 @@ rating/
 │   ├── RatingHistoryList.tsx    # 列表：按日期倒序
 │   ├── StarRating.tsx           # 1-5 星组件，主题色
 │   └── EfficiencySlider.tsx     # 1-5 slider 组件，主题色
+├── copy/
+│   └── empty-state-quips.ts     # 50 条空状态文案 + pickRandomQuip()
 ├── hooks/
 │   └── useRatings.ts
 ├── services/
@@ -140,7 +142,69 @@ CyberSchedule RN 是赛博朋克视觉，**不是**默认 RN 长相。Codex/Clau
 5. **EfficiencySlider 组件**：不用系统默认 slider 样子。track + thumb 都按主题色定制，thumb 下方显示当前数值（Orbitron 字体）。离散 5 档，每档有小刻度线
 6. **底部弹窗（RatingInputSheet）**：滑入动画、圆角顶部、背景 overlay、主题色边框。参考现存 `EventSheet.tsx` 或 schedule/components 下任何已有 Sheet 组件的视觉规格
 7. **历史列表卡片**：每条是一张卡而不是纯文本行。边框/背景/圆角和 `TodaySection` 或类似首页现有卡片一致
-8. **空状态**：文案带点 Iris 的幽默感，比如"还没打分，这一小时白过了" / "你有时间看这页说明没时间打分？"，不要写"暂无数据"
+8. **空状态**：文案从下面 50 条池子里**随机抽一条**展示。**这 50 条逐字复制到 `src/features/rating/copy/empty-state-quips.ts`，不许增删改**（语气是 Lux 写的，Codex/Claude 一碰就走味）：
+
+```ts
+// src/features/rating/copy/empty-state-quips.ts
+export const EMPTY_STATE_QUIPS: readonly string[] = [
+  '还没打分 这一小时白过了',
+  '你有时间看这页 说明没时间打分？',
+  '空得像你昨晚的计划',
+  '这一小时跑哪去了 说',
+  '纪念碑空着呢',
+  '没记录 = 没发生（存在主义角度）',
+  '不打 = 默认 5 星？我不替你填',
+  '不打 = 默认 1 星？我也不替你填',
+  '梯度下降也要 log 的',
+  '没数据的 dashboard 最诚实',
+  'FAB 在右下 等你',
+  '打一个 别让这页比你生活还干净',
+  '清一色空着 赛博极简 但你得加料',
+  '上一小时归档权归你',
+  '"刚才干啥了" 两分钟回忆一下',
+  '你不打分 Lux 就没素材',
+  '这一小时本来可以留点痕迹',
+  '空窗期谁都有 但你总得标一下',
+  '打一条 页面就不那么荒',
+  '评分延后一天就写不出来了',
+  '时间是流的 评分是锚',
+  '过去是唯一你能打分的东西',
+  '不是每小时都值得记住 但都可以被记录',
+  '你在等完美时段来打分？那就永远空',
+  '打分不是监工 是留痕',
+  '评分多了像病历 少了像空病房',
+  '写一条 再关 app 也不迟',
+  '点 FAB → 选时段 → 完事',
+  '一小时 1 星也是记录',
+  '"还没打" 和 "不想打" 差一个动作',
+  '每条打分都是给下周的自己写的',
+  '这页面还没毕业 需要你喂样本',
+  '空列表挺赛博 有数据更赛博',
+  '时段结束了 记忆正在衰减',
+  'log 一下 就当给自己备份',
+  '这里缺一条 像代码缺一行测试',
+  '打完去干别的 别在这页面待着',
+  '不记就忘 忘了就没发生过',
+  '刚过那一小时 给它几颗星',
+  '你的"待办"和"已发生"之间 差一个评分',
+  'Star 键就在那',
+  '效率 1 的那一小时 最值得记',
+  '站在现在 往回指一下',
+  '空白是暂时的 除非你懒',
+  '不打就别幻想将来能看出模式',
+  '现在打一条 刚好',
+  '上个时段已经走了 至少标个墓碑',
+  '这页面越空 越说明你活得快',
+  '打分是给未来的你收集的证据',
+  '空状态也算一种状态 但不是好状态',
+] as const;
+
+export function pickRandomQuip(): string {
+  return EMPTY_STATE_QUIPS[Math.floor(Math.random() * EMPTY_STATE_QUIPS.length)];
+}
+```
+
+空状态组件在 mount 时调 `pickRandomQuip()` 拿一条。不要每次 re-render 重抽（会闪）。用 `useMemo(() => pickRandomQuip(), [])` 或 `useState(() => pickRandomQuip())`。
 
 **验证手段**：写代码前**强制先读** `app/_layout.tsx`、`app/index.tsx`、`src/features/schedule/components/EventSheet.tsx`、`src/theme/index.ts`（主题字段）、至少一个现有 Tab 页面，把视觉惯例吃进去再动笔。
 
