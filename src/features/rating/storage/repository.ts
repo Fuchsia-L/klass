@@ -1,4 +1,4 @@
-import { TimeSlotRating } from '../types';
+import type { TimeSlotRating } from '../types';
 
 export interface RatingRepository {
   list(): Promise<TimeSlotRating[]>;
@@ -7,4 +7,5 @@ export interface RatingRepository {
   remove(id: string): Promise<void>;
   listPendingSync(): Promise<TimeSlotRating[]>;
   markSynced(id: string, syncedAt: string): Promise<void>;
+  subscribe?(listener: () => void): () => void;
 }

@@ -121,14 +121,19 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `hooks/useSettingsForm.ts` — form state for semester + theme, plus `resetAll`.
 - `services/settings.service.ts` — `loadSettings`, `saveSemesterSettings`, `clearAllData`.
 
-### `src/features/rating/` — **NEW (Phase 1)**
-- `src/features/rating/index.ts` — barrel re-exporting `./storage` and `./types`.
+### `src/features/rating/` — **NEW (Phases 1–2)**
+- `src/features/rating/index.ts` — public barrel exporting `useRatings` hook, rating service APIs (`createRating`, `createRatingService`, `exportRatings`, `getRating`, `listPendingSyncRatings`, `listRatings`, `markRatingSynced`, `removeRating`, `subscribeToRatingChanges`, `updateRating`), service input/export types (`RatingInput`, `RatingUpdateInput`, `RatingsExportData`), repository class/singleton (`LocalRatingRepository`, `localRatingRepository`), `RatingRepository` type, and rating domain types.
 - `src/features/rating/types.ts` — `RatingValue`, `TimeSlotRating` entity.
+- `src/features/rating/hooks/index.ts` — barrel exporting `useRatings`.
+- `src/features/rating/hooks/useRatings.ts` — loads ratings via the service, exposes `loading` / `error` state plus `refresh` / `save` (create or update) / `remove` helpers, and subscribes to rating service changes (which forward repository mutations) for auto-refresh.
+- `src/features/rating/services/index.ts` — barrel exporting rating service APIs and input/export types.
+- `src/features/rating/services/ratings.service.ts` — `createRatingService(repository)` factory plus default singleton bound to `localRatingRepository`. Generates UUID ids (uses `globalThis.crypto.randomUUID` when available), defaults `slot_end` to now and `slot_start` to one hour earlier when omitted, validates rating/efficiency as integers in 1–5, enforces optional field length caps (mood ≤20, activity ≤50, reflection ≤200), refreshes `updated_at` and resets `synced_at` on update, always writes `schema_version: 1`, exposes `exportRatings()` returning JSON-ready payload, and bridges repository listener notifications to subscribers (only emits direct mutation notifications when the repository does not provide its own listener).
+- `src/features/rating/services/ratings.service.test.ts` — service tests using a fake `RatingRepository`.
 - `src/features/rating/storage/index.ts` — barrel: `LocalRatingRepository`, `localRatingRepository`, `RatingRepository` (type), plus storage functions.
-- `src/features/rating/storage/repository.ts` — `RatingRepository` interface contract.
+- `src/features/rating/storage/repository.ts` — `RatingRepository` interface contract, including optional listener subscription.
 - `src/features/rating/storage/ratings.storage.ts` — AsyncStorage-backed store (key `cs-rn:time-slot-ratings:v1`) with in-memory cache, validation, listener notifications, and timestamp management (`prepareRatingForSave` refreshes `updated_at` on update).
 - `src/features/rating/storage/ratings.storage.test.ts` — storage tests (CRUD, listeners, edge cases).
-- `src/features/rating/storage/local-repository.ts` — `LocalRatingRepository` class implementing `RatingRepository` + `localRatingRepository` singleton.
+- `src/features/rating/storage/local-repository.ts` — `LocalRatingRepository` class implementing `RatingRepository` (delegates `list`/`get`/`save`/`remove`, computes `listPendingSync` by filtering `synced_at == null`, implements `markSynced` via load+save, and forwards `subscribe` to `subscribeToRatings`) + `localRatingRepository` singleton.
 - `src/features/rating/storage/local-repository.test.ts` — repository tests (`listPendingSync`, `markSynced`).
 
 ### `src/platform/`
@@ -252,13 +257,32 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `saveSemesterSettings(config: SemesterConfig): Promise<void>` — Callers: `useSettingsForm`.
 - `clearAllData(): Promise<void>` — wipes all `STORAGE_KEYS` and resets schedule+semester listeners. Callers: `useSettingsForm.resetAll`.
 
-### Rating — `src/features/rating/` **(new in Phase 1)**
+### Rating — `src/features/rating/` **(established in Phases 1–2)**
+
 Types — `src/features/rating/types.ts`:
 - `RatingValue = 1 | 2 | 3 | 4 | 5`.
 - `TimeSlotRating` — `{ id; slot_start; slot_end; linked_event_id?; rating: RatingValue; efficiency: RatingValue; mood?; activity?; reflection?; created_at; updated_at; synced_at?: string|null; schema_version: 1 }`.
 
 Repository contract — `src/features/rating/storage/repository.ts`:
-- `interface RatingRepository { list(): Promise<TimeSlotRating[]>; get(id: string): Promise<TimeSlotRating | null>; save(rating: TimeSlotRating): Promise<void>; remove(id: string): Promise<void>; listPendingSync(): Promise<TimeSlotRating[]>; markSynced(id: string, syncedAt: string): Promise<void> }`. Implementers: `LocalRatingRepository`. Future consumers (Phase 2+): `ratings.service.ts`.
+- `interface RatingRepository { list(): Promise<TimeSlotRating[]>; get(id: string): Promise<TimeSlotRating | null>; save(rating: TimeSlotRating): Promise<void>; remove(id: string): Promise<void>; listPendingSync(): Promise<TimeSlotRating[]>; markSynced(id: string, syncedAt: string): Promise<void>; subscribe?(listener: () => void): () => void }`. Implementers: `LocalRatingRepository`. Consumer: `ratings.service.ts`.
+
+Service — `src/features/rating/services/ratings.service.ts`:
+- `RatingInput` — `{ slot_start?: string; slot_end?: string; linked_event_id?: string; rating: number; efficiency: number; mood?: string; activity?: string; reflection?: string }`.
+- `RatingUpdateInput` — `Partial<Omit<RatingInput, 'rating' | 'efficiency'>> & { rating?: number; efficiency?: number }`.
+- `RatingsExportData` — `{ exported_at: string; schema_version: 1; ratings: TimeSlotRating[] }` JSON-ready export payload.
+- `createRatingService(repository: RatingRepository): RatingsService` — factory used directly by `ratings.service.test.ts` and bound to `localRatingRepository` for the default singleton exports.
+- `listRatings(): Promise<TimeSlotRating[]>` — delegates to `repository.list`. Callers: `useRatings`, future rating screens.
+- `getRating(id: string): Promise<TimeSlotRating | null>` — delegates to `repository.get`. Callers: future detail screens / tests.
+- `createRating(input: RatingInput): Promise<TimeSlotRating>` — generates UUID id, defaults `slot_end = now`, `slot_start = now − 1h` when omitted, validates rating/efficiency (1–5), enforces optional length caps (mood ≤20, activity ≤50, reflection ≤200), stamps `created_at`/`updated_at`, sets `synced_at = null`, writes `schema_version: 1`, persists via `repository.save`, then notifies subscribers (when repository lacks its own listener). Callers: `useRatings.save`.
+- `updateRating(id: string, input: RatingUpdateInput): Promise<TimeSlotRating>` — loads existing rating (throws if missing), merges fields, refreshes `updated_at`, resets `synced_at` to null, persists, notifies. Callers: `useRatings.save`.
+- `removeRating(id: string): Promise<void>` — delegates to `repository.remove`, notifies. Callers: `useRatings.remove`.
+- `listPendingSyncRatings(): Promise<TimeSlotRating[]>` — delegates to `repository.listPendingSync`. Callers: future sync code / tests.
+- `markRatingSynced(id: string, syncedAt?: string): Promise<void>` — defaults `syncedAt` to `new Date().toISOString()`, delegates to `repository.markSynced`, notifies. Callers: future sync code / tests.
+- `exportRatings(): Promise<RatingsExportData>` — wraps `repository.list()` with `exported_at` + `schema_version: 1`. Callers: future settings export action / tests.
+- `subscribeToRatingChanges(listener: () => void): () => void` — registers listener; lazily subscribes to `repository.subscribe` when available so storage-level mutations propagate to UI. Callers: `useRatings`.
+
+Hook — `src/features/rating/hooks/useRatings.ts`:
+- `useRatings(): { ratings: TimeSlotRating[]; loading: boolean; error: string | null; refresh: () => Promise<void>; save: (input: RatingInput, id?: string) => Promise<TimeSlotRating>; remove: (id: string) => Promise<void> }` — initial load via `listRatings`, subscribes to `subscribeToRatingChanges` for auto-refresh, mounts/unmount-safe state updates via `isMountedRef`, surfaces errors as strings, and routes `save` to `createRating` or `updateRating` based on optional `id`. Callers: future rating screens/components.
 
 Storage — `src/features/rating/storage/ratings.storage.ts`:
 - `loadRatingsFromStorage(): Promise<TimeSlotRating[]>` — cached read with schema validation.
@@ -268,19 +292,19 @@ Storage — `src/features/rating/storage/ratings.storage.ts`:
 - `removeRating(id: string): Promise<void>` — delete by id.
 - `subscribeToRatings(listener: () => void): () => void` — fires on every successful mutation.
 - `clearRatingsCache(): void` — test/reset hook.
-- Callers: `LocalRatingRepository`, `ratings.storage.test.ts`, `local-repository.test.ts`. No UI code reaches these directly per spec — the service layer (Phase 2) goes through `RatingRepository`.
+- Callers: `LocalRatingRepository`, `ratings.storage.test.ts`, `local-repository.test.ts`. No UI code reaches these directly per spec — the service layer goes through `RatingRepository`.
 
 Local repository — `src/features/rating/storage/local-repository.ts`:
-- `class LocalRatingRepository implements RatingRepository` — wraps storage; `listPendingSync()` filters `synced_at == null`; `markSynced(id, syncedAt)` saves with updated `synced_at`.
-- `localRatingRepository` — default singleton instance for injection.
-- Callers: `local-repository.test.ts`; intended consumer from Phase 2 onward is `ratings.service.ts`.
+- `class LocalRatingRepository implements RatingRepository` — wraps storage; `listPendingSync()` filters `synced_at == null`; `markSynced(id, syncedAt)` loads via `getRating`, no-ops if missing, otherwise saves with updated `synced_at`; `subscribe(listener)` delegates to `subscribeToRatings`.
+- `localRatingRepository` — default singleton instance for injection (used by `ratings.service.ts`).
+- Callers: `local-repository.test.ts`, `ratings.service.ts`.
 
 ### Shared — `src/shared/`
 - `AppBar({ title, subtitle?, right? })` — Callers: `app/index.tsx`, `app/matrix.tsx`, `app/settings.tsx`.
 - `FAB({ onPress })` — draggable floating action button. Callers: `app/index.tsx`, `app/matrix.tsx`.
 - `FAB_SIZE`, `FAB_EDGE_MARGIN`, `FAB_BOTTOM_MARGIN`, `FAB_DRAG_ACTIVE_OPACITY`, `FAB_IDLE_OPACITY`, `FAB_DRAG_THRESHOLD`, `FabPosition`, `FabScreenSize`, `FabBounds`, `getFabBounds(screen)`, `clampFabPosition(pos, screen)`, `getDefaultFabPosition(screen)`, `snapFabPosition(pos, screen)`, `hasExceededDragThreshold(dx, dy)` — Callers: `FAB.tsx`, tests.
 - `formatTime(date)`, `formatLocalDate(date)`, `formatDate(date)`, `isSameDay(a, b)` — Callers: `EventCard`, `EventSheet`, `app/matrix.tsx`, `whut-import`, etc.
-- `generateId(): string` — Callers: `events.service`, `todo.service`, `whut-import`, (future: `ratings.service`).
+- `generateId(): string` — Callers: `events.service`, `todo.service`, `whut-import`, (future: rating UI flows that need short ids; service uses UUIDs internally).
 
 ### Theme — `src/theme/`
 - `ThemeConfig` — Callers: every component that styles via theme; `categoryColors` resolver.
@@ -342,18 +366,22 @@ ThemeProvider (app/_layout.tsx)
   → components read colors/fonts/radius
 ```
 
-### Rating flow (established in Phase 1; UI/service wiring arrives in Phases 2–5)
+### Rating flow (storage + service + hook live; UI screens arrive in later phases)
 ```
-[Phase 2+] UI / useRatings
-  → features/rating/services/ratings.service.ts   (not yet implemented)
+[Phase 3+] UI component
+  → features/rating/hooks/useRatings.ts
+      (refresh / save / remove)
+  → features/rating/services/ratings.service.ts
+      (validate input, default slot/timestamps, UUID id, schema_version: 1)
   → RatingRepository   (interface, storage-independent)
-  → LocalRatingRepository (Phase 1, implemented)
+  → LocalRatingRepository
       → features/rating/storage/ratings.storage.ts
       → platform/storage/async-storage.ts  (key: cs-rn:time-slot-ratings:v1)
       → in-memory cache (cachedRatings) + subscribeToRatings listeners
+          → repository.subscribe → subscribeToRatingChanges → useRatings.refresh
 ```
 
-The repository interface is the seam that keeps service code decoupled from AsyncStorage. A future `RemoteRatingRepository` or `SyncingRatingRepository` can replace `LocalRatingRepository` without touching the service/UI layers.
+The repository interface is the seam that keeps service code decoupled from AsyncStorage. A future `RemoteRatingRepository` or `SyncingRatingRepository` can replace `LocalRatingRepository` without touching the service / hook / UI layers. The service-level `subscribeToRatingChanges` lazily attaches to `repository.subscribe` so storage mutations from any source (e.g. background sync) propagate to UI.
 
 ---
 
@@ -379,3 +407,4 @@ Future (not yet installed, referenced in rating spec):
 ## 5. Changelog
 
 - **Phase 1 — Domain Model & Storage Foundation (time-slot-rating)**: added `src/features/rating/` with `TimeSlotRating` type, `RatingRepository` contract, AsyncStorage-backed `ratings.storage.ts` (key `cs-rn:time-slot-ratings:v1`) following the `events.storage` cache+listener pattern, `LocalRatingRepository` implementation with `listPendingSync` / `markSynced` semantics, barrel exports, plus storage and repository Jest suites. Registered the new storage key in `src/platform/storage/async-storage.ts`. No UI, service, or hook layer yet — those arrive in Phases 2–5.
+- **Phase 2 — Rating Service & Hook**: added repository-injected `ratings.service.ts` exposing `createRatingService` factory + default singleton (UUID id generation, default slot window, ISO timestamps, rating/efficiency 1–5 validation, optional field length caps, sync helpers, `exportRatings()` JSON payload, listener bridging via `repository.subscribe`). Added `useRatings` hook (loading/error/refresh/save/remove with mount-safety and auto-refresh on service notifications). Extended `LocalRatingRepository` with a `subscribe` method that forwards storage listeners. Updated `src/features/rating/index.ts` to export the new hook and service surface, and added service tests backed by a fake `RatingRepository`.

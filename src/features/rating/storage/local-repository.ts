@@ -1,6 +1,12 @@
-import { TimeSlotRating } from '../types';
-import { RatingRepository } from './repository';
-import { getRating, listRatings, removeRating, saveRating } from './ratings.storage';
+import type { TimeSlotRating } from '../types';
+import type { RatingRepository } from './repository';
+import {
+  getRating,
+  listRatings,
+  removeRating,
+  saveRating,
+  subscribeToRatings,
+} from './ratings.storage';
 
 export class LocalRatingRepository implements RatingRepository {
   list(): Promise<TimeSlotRating[]> {
@@ -29,6 +35,10 @@ export class LocalRatingRepository implements RatingRepository {
     if (!rating) return;
 
     await saveRating({ ...rating, synced_at: syncedAt });
+  }
+
+  subscribe(listener: () => void): () => void {
+    return subscribeToRatings(listener);
   }
 }
 
