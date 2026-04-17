@@ -121,13 +121,13 @@ Phase 结束后，更新 `ARCHITECTURE.md`：
 - 数据流加 rating 分支
 - API Contracts 列出 rating service 的 CRUD 签名
 
-## 开放问题（等 Iris 定）
+## 已决定（Lux 做的默认，Iris 可事后推翻）
 
-1. **Tab icon**：新 Tab 用哪个 lucide 图标？（建议：`Star` 或 `Gauge`）
-2. **星级 vs 百分制**：现在是 1-5 星，你想要 1-10 还是 1-100？
-3. **默认时段长度**：新增时默认时段范围是"过去 1 小时"还是"过去一节课（需要查课表）"？
-4. **是否把 RATING Tab 放在显眼位置**：今 TODAY / MATRIX / SETTINGS 三个 Tab，加 RATING 就是四个。还是塞到 SETTINGS 下面？
-5. **未来接课表自动触发**这条链想走吗？走的话 `linked_event_id` 保留，不走就删掉
+1. **Tab icon**：`Star` from lucide-react-native
+2. **评分粒度**：1-5 星
+3. **默认时段**：当前时间往前 1 小时（hard-coded，不查课表）
+4. **Tab 位置**：第 4 个 Tab，并列 TODAY / MATRIX / SETTINGS。顺序：TODAY · MATRIX · RATING · SETTINGS
+5. **`linked_event_id` 钩子**：保留在 schema 里但本次不接。为未来"课表时段结束自动弹出打分"留位
 
 ## 验收
 
