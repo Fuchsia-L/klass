@@ -1,10 +1,17 @@
 export { useRatings } from './hooks';
 export { EfficiencySlider, RatingHistoryList, RatingInputSheet, StarRating } from './components';
 export {
+  RatingServiceProvider,
+  useRatingService,
+} from './RatingServiceProvider';
+export type { RatingServiceContextValue } from './RatingServiceProvider';
+export {
+  configureRatingsService,
   createRating,
   createRatingService,
   exportRatings,
   getRating,
+  getRatingsService,
   listPendingSyncRatings,
   listRatings,
   markRatingSynced,
@@ -12,7 +19,12 @@ export {
   subscribeToRatingChanges,
   updateRating,
 } from './services';
-export type { RatingInput, RatingUpdateInput, RatingsExportData } from './services';
+export type {
+  RatingInput,
+  RatingsExportData,
+  RatingsService,
+  RatingUpdateInput,
+} from './services';
 export { LocalRatingRepository, localRatingRepository } from './storage';
 export type { RatingRepository } from './storage';
 export {

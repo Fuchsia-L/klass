@@ -24,7 +24,7 @@ export type RatingsExportData = {
   ratings: TimeSlotRating[];
 };
 
-type RatingsService = {
+export type RatingsService = {
   listRatings(): Promise<TimeSlotRating[]>;
   getRating(id: string): Promise<TimeSlotRating | null>;
   createRating(input: RatingInput): Promise<TimeSlotRating>;
@@ -218,15 +218,32 @@ function createRatingService(repository: RatingRepository): RatingsService {
   };
 }
 
-const ratingsService = createRatingService(localRatingRepository);
+let ratingsService: RatingsService = createRatingService(localRatingRepository);
 
-export const listRatings = ratingsService.listRatings;
-export const getRating = ratingsService.getRating;
-export const createRating = ratingsService.createRating;
-export const updateRating = ratingsService.updateRating;
-export const removeRating = ratingsService.removeRating;
-export const listPendingSyncRatings = ratingsService.listPendingSyncRatings;
-export const markRatingSynced = ratingsService.markRatingSynced;
-export const exportRatings = ratingsService.exportRatings;
-export const subscribeToRatingChanges = ratingsService.subscribeToRatingChanges;
+// Lets RatingServiceProvider rewire the module-level singleton to a service
+// backed by SyncingRatingRepository at app boot. Must run before the first
+// useRatings subscriber registers (provider mounts above route screens).
+export function configureRatingsService(service: RatingsService): void {
+  ratingsService = service;
+}
+
+export function getRatingsService(): RatingsService {
+  return ratingsService;
+}
+
+export const listRatings: RatingsService['listRatings'] = () => ratingsService.listRatings();
+export const getRating: RatingsService['getRating'] = (id) => ratingsService.getRating(id);
+export const createRating: RatingsService['createRating'] = (input) =>
+  ratingsService.createRating(input);
+export const updateRating: RatingsService['updateRating'] = (id, input) =>
+  ratingsService.updateRating(id, input);
+export const removeRating: RatingsService['removeRating'] = (id) =>
+  ratingsService.removeRating(id);
+export const listPendingSyncRatings: RatingsService['listPendingSyncRatings'] = () =>
+  ratingsService.listPendingSyncRatings();
+export const markRatingSynced: RatingsService['markRatingSynced'] = (id, syncedAt) =>
+  ratingsService.markRatingSynced(id, syncedAt);
+export const exportRatings: RatingsService['exportRatings'] = () => ratingsService.exportRatings();
+export const subscribeToRatingChanges: RatingsService['subscribeToRatingChanges'] = (listener) =>
+  ratingsService.subscribeToRatingChanges(listener);
 export { createRatingService };

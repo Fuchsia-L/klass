@@ -1,8 +1,10 @@
 export {
+  configureRatingsService,
   createRating,
   createRatingService,
   exportRatings,
   getRating,
+  getRatingsService,
   listPendingSyncRatings,
   listRatings,
   markRatingSynced,
@@ -10,4 +12,9 @@ export {
   subscribeToRatingChanges,
   updateRating,
 } from './ratings.service';
-export type { RatingInput, RatingUpdateInput, RatingsExportData } from './ratings.service';
+export type {
+  RatingInput,
+  RatingsExportData,
+  RatingsService,
+  RatingUpdateInput,
+} from './ratings.service';

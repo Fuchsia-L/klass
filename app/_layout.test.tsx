@@ -1,6 +1,9 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { act, render, waitFor } from '@testing-library/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppState } from 'react-native';
 import RootLayout from './_layout';
+import { SYNC_TOKEN_STORAGE_KEY, resetSyncSchedulerForTests } from '../src/features/rating/sync';
 
 const tabScreens: Array<{ name: string; title: string; icon: string }> = [];
 
@@ -70,12 +73,27 @@ jest.mock('../src/theme/ThemeContext', () => ({
 }));
 
 describe('RootLayout tabs', () => {
+  let appStateSpy: jest.SpyInstance;
+
   beforeEach(() => {
     tabScreens.length = 0;
+    resetSyncSchedulerForTests();
+    appStateSpy = jest.spyOn(AppState, 'addEventListener').mockImplementation(
+      (() => ({ remove: jest.fn() })) as unknown as typeof AppState.addEventListener,
+    );
   });
 
-  it('renders TODAY, MATRIX, RATING, SETTINGS in order with matching tab styles', () => {
+  afterEach(() => {
+    resetSyncSchedulerForTests();
+    appStateSpy.mockRestore();
+  });
+
+  it('renders TODAY, MATRIX, RATING, SETTINGS in order with matching tab styles', async () => {
     render(<RootLayout />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
 
     expect(tabScreens).toEqual([
       { name: 'index', title: 'TODAY', icon: 'Home' },
@@ -83,5 +101,21 @@ describe('RootLayout tabs', () => {
       { name: 'rating', title: 'RATING', icon: 'Star' },
       { name: 'settings', title: 'SETTINGS', icon: 'Settings' },
     ]);
+  });
+
+  it('wires RatingServiceProvider so boot with a stored token starts the scheduler once', async () => {
+    await AsyncStorage.setItem(SYNC_TOKEN_STORAGE_KEY, 'layout-token');
+
+    const { getSyncScheduler, SyncScheduler } = require('../src/features/rating/sync');
+    const startSpy = jest.spyOn(SyncScheduler.prototype, 'start');
+
+    render(<RootLayout />);
+
+    await waitFor(() => {
+      expect(startSpy).toHaveBeenCalledTimes(1);
+    });
+    expect(getSyncScheduler().getStatus()).toEqual({ kind: 'idle', lastSyncAt: null });
+
+    startSpy.mockRestore();
   });
 });

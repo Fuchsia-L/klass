@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Home, Grid3X3, Settings, Star } from 'lucide-react-native';
 import { ThemeProvider, useTheme } from '../src/theme/ThemeContext';
+import { RatingServiceProvider } from '../src/features/rating';
 
 function TabLayout() {
   const theme = useTheme();
@@ -76,7 +77,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ThemeProvider>
-        <TabLayout />
+        <RatingServiceProvider>
+          <TabLayout />
+        </RatingServiceProvider>
       </ThemeProvider>
     </SafeAreaProvider>
   );

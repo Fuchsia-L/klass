@@ -55,6 +55,13 @@ export class SyncScheduler implements SyncSchedulerContract {
 
   start(): void {
     this.started = true;
+    // Boot-time wiring constructs the scheduler with `unconfigured` so the
+    // settings UI shows the right copy when no token is stored. Once a token
+    // is available and start() is called, we own the transition out of that
+    // state; waiting for a sync to flip it would leave the UI misleading.
+    if (this.status.kind === 'unconfigured') {
+      this.setStatus({ kind: 'idle', lastSyncAt: null });
+    }
     // A caller writing a fresh token after a 401/403 expects start() to
     // re-arm the scheduler. Kick off a sync so they don't have to also
     // call pullNow() — whether or not a prior stop() cleared `started`.
