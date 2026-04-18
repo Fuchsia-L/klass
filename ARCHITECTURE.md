@@ -125,8 +125,8 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `services/rating-export.service.ts` — rating JSON export helper: loads via `ratings.service.exportRatings()`, serializes complete `TimeSlotRating[]` records, uses optional `expo-sharing` + `expo-file-system` when available, and falls back to React Native `Share.share`.
 - `services/rating-export.service.test.ts` — export serialization and share-path tests.
 
-### `src/features/rating/` — **NEW (Phases 1–5)**
-- `src/features/rating/index.ts` — public barrel exporting rating components (`EfficiencySlider`, `RatingHistoryList`, `RatingInputSheet`, `StarRating`), `useRatings` hook, rating service APIs (`createRating`, `createRatingService`, `exportRatings`, `getRating`, `listPendingSyncRatings`, `listRatings`, `markRatingSynced`, `removeRating`, `subscribeToRatingChanges`, `updateRating`), service input/export types (`RatingInput`, `RatingUpdateInput`, `RatingsExportData`), repository class/singleton (`LocalRatingRepository`, `localRatingRepository`), `RatingRepository` type, and rating domain types.
+### `src/features/rating/` — **NEW (Phases 1–5 + cloud-sync Phases 1–2)**
+- `src/features/rating/index.ts` — public barrel exporting rating components (`EfficiencySlider`, `RatingHistoryList`, `RatingInputSheet`, `StarRating`), `useRatings` hook, rating service APIs (`createRating`, `createRatingService`, `exportRatings`, `getRating`, `listPendingSyncRatings`, `listRatings`, `markRatingSynced`, `removeRating`, `subscribeToRatingChanges`, `updateRating`), service input/export types (`RatingInput`, `RatingUpdateInput`, `RatingsExportData`), repository class/singleton (`LocalRatingRepository`, `localRatingRepository`), `RatingRepository` type, rating domain types, and the cloud-sync surface (`CloudRatingApiClient`, `DEFAULT_CLOUD_RATING_BASE_URL`, `DEFAULT_CLOUD_RATING_TIMEOUT_MS`, `SyncError`, `SyncStateEmitter`, plus `CloudRatingApiClientOptions`, `CloudRatingListResponse`, `CloudRatingRecord`, `CloudRatingSyncErrorEntry`, `CloudRatingSyncRequest`, `CloudRatingSyncResponse`, `FetchLike`, `SyncErrorOptions`, `SyncStatus`, `SyncStatusListener`, `TokenProvider` types).
 - `src/features/rating/types.ts` — `RatingValue`, `TimeSlotRating` entity.
 - `src/features/rating/components/index.ts` — component barrel.
 - `src/features/rating/components/StarRating.tsx` — themed 1–5 star input with active fill, inactive outline, and press scale feedback.
@@ -147,6 +147,13 @@ Single source of truth for all agents (coders and reviewers). Keep this file in 
 - `src/features/rating/storage/ratings.storage.test.ts` — storage tests (CRUD, listeners, edge cases).
 - `src/features/rating/storage/local-repository.ts` — `LocalRatingRepository` class implementing `RatingRepository` (filters tombstones from `list`/`get`, soft-deletes via `remove` by writing a tombstone with `deleted_at`/`updated_at = now` and `synced_at = null` while preserving rating/efficiency/mood/etc., no-ops `remove` on missing or already-tombstoned records, computes `listPendingSync` by filtering `synced_at == null` (tombstones included), implements `markSynced` via load+save, and forwards `subscribe` to `subscribeToRatings`) + `localRatingRepository` singleton.
 - `src/features/rating/storage/local-repository.test.ts` — repository tests (`listPendingSync`, `markSynced`, tombstone soft-delete semantics, ms-precision timestamps).
+
+#### `src/features/rating/sync/`
+- `src/features/rating/sync/index.ts` — barrel re-exporting `SyncStateEmitter`, `SyncStatus`, `SyncStatusListener`, `CloudRatingApiClient`, `DEFAULT_CLOUD_RATING_BASE_URL`, `DEFAULT_CLOUD_RATING_TIMEOUT_MS`, `SyncError`, and the request/response/option types.
+- `src/features/rating/sync/sync-state.ts` — `SyncStatus` union (`'idle' | 'syncing' | 'error' | 'unconfigured'`), `SyncStatusListener` type, and `SyncStateEmitter` class (`getStatus` / `setStatus` / `subscribe`; no-op on unchanged status).
+- `src/features/rating/sync/sync-state.test.ts` — emitter tests for defaults, initial status override, notify-on-change, no-notify-on-same, and unsubscribe.
+- `src/features/rating/sync/api-client.ts` — `CloudRatingApiClient` wrapping `fetch` for `POST /v1/ratings/sync` and `GET /v1/ratings?since=`. Fetches the token per request, scrubs `expected_updated_at` from outgoing records, enforces a 10s AbortController timeout, maps non-2xx to `SyncError(statusCode)`, surfaces `isTimeout` / `isMissingToken` flags, and accepts an injectable `baseUrl` / `timeoutMs` / `fetchImpl`.
+- `src/features/rating/sync/api-client.test.ts` — client tests covering URL/method/headers/body, injected baseUrl, per-request token freshness, `expected_updated_at` scrubbing, partial-success errors[] pass-through, missing/empty-string token handling, 401/500 status mapping, and timeout behavior with fake timers.
 
 ### `src/platform/`
 - `src/platform/storage/async-storage.ts` — `STORAGE_KEYS` registry, `loadJSON<T>`, `saveJSON<T>` AsyncStorage wrappers. `STORAGE_KEYS` now includes `ratings: 'cs-rn:time-slot-ratings:v1'`.
@@ -325,6 +332,24 @@ Local repository — `src/features/rating/storage/local-repository.ts`:
 - `localRatingRepository` — default singleton instance for injection (used by `ratings.service.ts`).
 - Callers: `local-repository.test.ts`, `ratings.service.ts`.
 
+Sync — `src/features/rating/sync/` **(cloud-sync Phase 2)**:
+- `SyncStatus` — `'idle' | 'syncing' | 'error' | 'unconfigured'`. Used by future scheduler + UI indicators.
+- `SyncStatusListener` — `(status: SyncStatus) => void`.
+- `class SyncStateEmitter` — `constructor(initialStatus?: SyncStatus = 'idle')`, `getStatus(): SyncStatus`, `setStatus(next: SyncStatus): void` (no-op if unchanged; otherwise notifies subscribers), `subscribe(listener): () => void`. Callers: future scheduler (Phase 4) + UI status consumers.
+- `SyncError` (extends `Error`) — `{ name: 'SyncError'; statusCode?: number; isTimeout: boolean; isMissingToken: boolean; body?: unknown; cause?: unknown }`. Constructed with `SyncErrorOptions`.
+- `SyncErrorOptions` — `{ statusCode?: number; isTimeout?: boolean; isMissingToken?: boolean; body?: unknown; cause?: unknown }`.
+- `CloudRatingRecord` — `TimeSlotRating & { expected_updated_at?: string }`. Client-side hint for optimistic-concurrency that is scrubbed before the wire send.
+- `CloudRatingSyncRequest` — `{ records: readonly CloudRatingRecord[]; since?: string | null }`.
+- `CloudRatingSyncErrorEntry` — `{ id?: string; error?: string; [key: string]: unknown }` partial-success entry.
+- `CloudRatingSyncResponse` — `{ records?: TimeSlotRating[]; errors?: CloudRatingSyncErrorEntry[]; server_time?: string; [key: string]: unknown }`. `records` carries server-accepted rows that the scheduler will `markSynced(id, server_time)`.
+- `CloudRatingListResponse` — `{ records?: TimeSlotRating[]; server_time?: string; [key: string]: unknown }`.
+- `TokenProvider` — `() => string | null | undefined | Promise<string | null | undefined>`. Called per request; empty-string and nullish values produce `SyncError(isMissingToken: true)` without hitting the network.
+- `FetchLike` — minimal fetch shape (`string`, `{ method?, headers?, body?, signal? }` → `Promise<{ ok; status; json(); text?() }>`). Injectable seam for tests.
+- `CloudRatingApiClientOptions` — `{ getToken: TokenProvider; baseUrl?: string; timeoutMs?: number; fetchImpl?: FetchLike }`.
+- `class CloudRatingApiClient` — `constructor(options: CloudRatingApiClientOptions)` (requires `getToken` + `fetchImpl` or `globalThis.fetch`); `sync({ records, since? }): Promise<CloudRatingSyncResponse>` (POST `/v1/ratings/sync`, scrubs `expected_updated_at`); `list(since: string): Promise<CloudRatingListResponse>` (GET `/v1/ratings?since=<encoded>`). Both attach `Authorization: Bearer <token>`, enforce a 10s AbortController timeout, and map non-2xx to `SyncError(statusCode)`. Callers: future scheduler (Phase 4).
+- `DEFAULT_CLOUD_RATING_BASE_URL` — `'https://api.epoch0.org'` (trailing slashes stripped).
+- `DEFAULT_CLOUD_RATING_TIMEOUT_MS` — `10_000`.
+
 ### Shared — `src/shared/`
 - `AppBar({ title, subtitle?, right? })` — Callers: `app/index.tsx`, `app/matrix.tsx`, `app/settings.tsx`.
 - `FAB({ onPress })` — draggable floating action button. Callers: `app/index.tsx`, `app/matrix.tsx`.
@@ -457,6 +482,7 @@ Optional:
 - **Phase 5 — JSON Export from Settings**: replaced the placeholder settings export action with `导出打分数据`, backed by `src/features/settings/services/rating-export.service.ts`. The helper loads records through `ratings.service.exportRatings()` rather than storage, serializes complete `TimeSlotRating[]` records including rating/efficiency/timestamps/schema/sync fields, prefers optional Expo Sharing + file cache when available, and falls back to React Native `Share.share`. Added settings action tests plus helper tests for empty arrays, optional fields/emoji/long strings, service-backed loading, Expo Sharing, and fallback sharing.
 - **Phase 6 — Documentation & Final Verification**: updated this architecture document to describe the final local-first rating file tree, API contracts, data flow through `RatingRepository` / `LocalRatingRepository` / `ratings.storage.ts`, export behavior, and v1 limitations. Final acceptance requires `npm test`, TypeScript validation, Expo start/bundling validation, Android APK validation via the documented Gradle command, and the manual rating persistence/export checklist below.
 - **Cloud-sync Phase 1 — Tombstone schema + local soft delete**: extended `TimeSlotRating` with optional `deleted_at: string | null`, taught `ratings.storage.ts` to validate the new field, and refactored `LocalRatingRepository` so `remove(id)` writes a tombstone (preserving rating/efficiency/mood/etc., setting `deleted_at`/`updated_at` to `new Date().toISOString()` and `synced_at` to `null`) instead of physically deleting. `LocalRatingRepository.list()` and `get(id)` now hide tombstones from UI consumers, while `listPendingSync()` still surfaces them so they push when sync arrives. `remove` is a no-op for missing or already-tombstoned records. All new timestamps remain millisecond-precision ISO; no `.slice(0, 19)` constructions exist anywhere in `src/`.
+- **Cloud-sync Phase 2 — CloudRatingApiClient + sync types**: introduced `src/features/rating/sync/` with `SyncStateEmitter` + `SyncStatus` union, `CloudRatingApiClient` wrapping `fetch` for `POST /v1/ratings/sync` and `GET /v1/ratings?since=` (per-request `getToken`, `expected_updated_at` scrubbing, 10s AbortController timeout, `SyncError` with `statusCode` / `isTimeout` / `isMissingToken`, injectable `baseUrl` / `timeoutMs` / `fetchImpl`), and `DEFAULT_CLOUD_RATING_BASE_URL` / `DEFAULT_CLOUD_RATING_TIMEOUT_MS` constants. Re-exported from `src/features/rating/index.ts`. No scheduler or UI wiring yet — those arrive in Phases 3–4.
 
 ---
 
@@ -470,7 +496,7 @@ Optional:
 - Verify the shared JSON is an array of complete `TimeSlotRating` records with `id`, `slot_start`, `slot_end`, `rating`, `efficiency`, `created_at`, `updated_at`, `synced_at`, and `schema_version: 1` fields, plus any optional `activity`, `mood`, `reflection`, or `linked_event_id` values that were saved.
 
 ### Known v1 limitations
-- No cloud sync implementation yet; sync-related fields and APIs are extension points only.
+- Cloud sync is partially scaffolded (tombstone schema + `CloudRatingApiClient` + `SyncStateEmitter` landed in cloud-sync Phases 1–2), but no scheduler/trigger, credentials UI, or conflict-resolution flow is wired up yet.
 - No MCP endpoint or server API for rating records.
 - No widget entry point for creating or viewing ratings.
 - No AI summary or analysis of rating history.
