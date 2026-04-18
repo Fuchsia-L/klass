@@ -498,6 +498,121 @@ app/_layout.tsx  →  <RatingServiceProvider>
     cleanup → subscription.remove()
 ```
 
+### Cloud sync module overview
+
+The cloud sync module lives entirely under `src/features/rating/sync/` plus the `RatingServiceProvider`. It is a single-user, LWW (last-write-wins) sync layer that keeps the local AsyncStorage-backed rating set in step with `https://api.epoch0.org`. It is intentionally:
+
+- **Layered**: UI / hook / service never touch `fetch` or `AsyncStorage` sync state. All network work is owned by `SyncScheduler`, and all I/O is injected through `RatingRepository` + `SyncApiClient` seams.
+- **Token-fetched per request**: `CloudRatingApiClient` calls `getToken()` on every request; editing the token in Settings takes effect on the very next sync without rebuilding the scheduler or client.
+- **Tombstone-based soft delete**: `LocalRatingRepository.remove(id)` writes a tombstone (`deleted_at`/`updated_at = now`, `synced_at = null`) instead of physically deleting. `list()` / `get()` hide tombstones from the UI, while `listAll()` and `listPendingSync()` expose them to the sync layer so deletes propagate up and newer local deletes are not clobbered by older remote rows during LWW merges.
+- **Debounced push + scheduler-triggered pull**: Writes fan out through `SyncingRatingRepository`, which fires `scheduler.notifyLocalChange()` exactly once per write. The scheduler debounces `doSync` by 5 s; `pullNow()` on `AppState` `active` and the Settings `立即同步` debug button bypass the debounce.
+- **Always default LWW, never optimistic concurrency**: Outgoing records are scrubbed of any `expected_updated_at` hint before the wire send, and the server is trusted to resolve conflicts by `updated_at`.
+
+Module layout:
+
+| Concern | Symbol / file |
+|---|---|
+| Status emitter (unused by scheduler; kept for standalone consumers) | `SyncStateEmitter`, `SyncStatus` — `sync/sync-state.ts` |
+| Typed error | `SyncError` (`statusCode`, `isTimeout`, `isMissingToken`, `body`, `cause`) — `sync/api-client.ts` |
+| HTTP client | `CloudRatingApiClient.sync` / `.list` — `sync/api-client.ts` |
+| Repository wrapper (write fan-out) | `SyncingRatingRepository` — `sync/syncing-repository.ts` |
+| Scheduler (debounce + retry + merge) | `SyncScheduler`, `getSyncScheduler`, `resetSyncSchedulerForTests` — `sync/sync-scheduler.ts` |
+| AsyncStorage token + singleton builder | `SYNC_TOKEN_STORAGE_KEY`, `loadSyncToken`, `saveSyncToken`, `clearSyncToken`, `getConfiguredSyncScheduler` — `sync/wiring.ts` |
+| App lifecycle wiring | `RatingServiceProvider`, `useRatingService` — `RatingServiceProvider.tsx` |
+| Settings UI (token input, status row, debug button) | `app/settings.tsx` 云端同步 section |
+| Detail-modal delete | `app/rating.tsx` detail modal destructive `删除` |
+
+### Cloud sync — write path (local mutation → cloud)
+
+```
+UI (RatingInputSheet / detail-modal 删除)
+  → useRatings.save | useRatings.remove
+  → ratings.service.ts forwarder (module-level singleton swapped at boot)
+  → SyncingRatingRepository.save | .remove
+      → LocalRatingRepository.save | .remove
+          (soft delete → tombstone with deleted_at/updated_at = now,
+           synced_at = null)
+        → ratings.storage → AsyncStorage (cs-rn:time-slot-ratings:v1)
+        → subscribeToRatings listeners → useRatings.refresh → history re-render
+      → scheduler.notifyLocalChange()         (exactly once)
+          → debounce 5s (collapses burst writes)
+          → doSync():
+              emit { kind: 'syncing', lastSyncAt }
+              pending = localRepo.listPendingSync()     // tombstones included
+              since   = max(localRepo.listAll().updated_at) ?? null
+              resp    = api.sync({ records: pending, since })
+                        POST /v1/ratings/sync
+                        Authorization: Bearer <loadSyncToken()>
+                        (expected_updated_at scrubbed; 10s AbortController timeout)
+              LWW-merge resp.records into localRepo (save when remote updated_at
+                 is strictly newer than local, or record is missing locally;
+                 tombstones upsert and are auto-hidden by list())
+              for each accepted pushed record:
+                 localRepo.markSynced(id, resp.server_time)
+              log resp.errors[] via console.warn (no backoff)
+              emit { kind: 'idle', lastSyncAt: resp.server_time }
+```
+
+### Cloud sync — pull path (cloud → local)
+
+```
+AppState 'change' → next === 'active'
+  → scheduler.pullNow()                       (bypasses 5s debounce)
+  → doSync()                                  (same body as write path)
+      emit { kind: 'syncing', lastSyncAt }
+      // note: there may still be pending records; doSync always does a
+      //       sync({ records, since }) round trip rather than a bare GET.
+      //       The shared body is intentional — one request reconciles push + pull.
+      ... (same as write path) ...
+      emit { kind: 'idle', lastSyncAt: resp.server_time }
+
+Manual entry points:
+  Settings → "立即同步" button
+    → scheduler.notifyLocalChange() + scheduler.pullNow()
+  Settings → "保存 token" button
+    → saveSyncToken(trimmedInput) → scheduler.start() → scheduler.pullNow()
+```
+
+### Cloud sync — error / retry table
+
+Trigger is the classification of the `SyncError` (or generic `Error`) thrown from `api.sync` / `api.list`. Backoff schedule is fixed per attempt index and caps at 5 minutes with unlimited attempts. A `notifyLocalChange()` during backoff cancels the pending retry and restarts the 5 s debounce instead. All error-state emissions carry the last successful `lastSyncAt` so the UI can still render relative time.
+
+| Trigger | Example | Emitted status | Auto-retry schedule | User-visible copy |
+|---|---|---|---|---|
+| Network error / offline | `fetch` rejects, DNS fail, server unreachable | `{ kind: 'error', message }` | 5 s → 30 s → 2 min → 5 min → 5 min … (capped, unlimited) | `网络异常 · {n}s 后重试` |
+| Server 5xx | VPS returns 500/502/503/504 | `{ kind: 'error', message }` | 5 s → 30 s → 2 min → 5 min → 5 min … | `服务端异常 · {n}s 后重试` |
+| Request timeout | 10 s AbortController fires | `{ kind: 'error', message }` | 5 s → 30 s → 2 min → 5 min → 5 min … | `超时 · {n}s 后重试` |
+| Missing / empty token | `getToken()` returns `null` / `''` | `{ kind: 'error', message }` | **No retry** — waits for `start()` / `notifyLocalChange()` after a token is saved | `token 无效` |
+| 401 / 403 | Wrong or revoked token | `{ kind: 'error', message }` | **No retry** — same as missing token | `token 无效` |
+| Partial record `errors[]` | `response.errors` lists per-record failures | Scheduler stays `idle` after the batch; offending records are still `console.warn`’d | No retry triggered by per-record errors | Not surfaced in UI — the batch as a whole is considered successful |
+| Success | 2xx with `records` + `server_time` | `{ kind: 'idle', lastSyncAt: server_time }` | — | `已同步 · {relative-time}` / `刚刚同步` |
+
+Status lifecycle:
+
+```
+unconfigured ──(token saved → start())──▶ idle (lastSyncAt: null)
+     │                                        │
+     │                                        ▼
+     │                                   syncing
+     │                                        │
+     │                            ┌───────────┼───────────┐
+     │                            ▼           ▼           ▼
+     │                          idle        error      error (token 无效)
+     │                            │           │           │
+     │                            │           │           │
+     │                            │    ┌──────┘           │
+     │                            │    ▼                  │
+     │                            │  retry (5s/30s/2m/…)  │  no auto retry
+     │                            │    │                  │
+     │                            │    ▼                  │
+     │                            └── syncing ◀───────────┘  (manual start()/
+     │                                                        notifyLocalChange()
+     │                                                        after saving a
+     │                                                        new token)
+     │
+     └── status stays `unconfigured` until start() is called
+```
+
 ### Rating export flow
 ```
 SettingsScreen "导出打分数据"
@@ -543,6 +658,7 @@ Optional:
 - **Cloud-sync Phase 3 — SyncingRatingRepository wrapper**: added `src/features/rating/sync/syncing-repository.ts` with a minimal `SyncScheduler` interface (`notifyLocalChange(): void`) and a `SyncingRatingRepository` that implements `RatingRepository` by delegating to an injected local repository and calling `scheduler.notifyLocalChange()` after every `save` / `remove` (and exactly once per call). `list` / `get` / `listPendingSync` / `markSynced` remain pure pass-throughs, and `subscribe` forwards to the local repository when it offers one. No network or fetch work happens inside the wrapper — all sync orchestration stays in the scheduler (Phase 4). Re-exported through `src/features/rating/sync/index.ts` and `src/features/rating/index.ts`; covered by a new Jest suite in `syncing-repository.test.ts`.
 - **Cloud-sync Phase 4 — SyncScheduler singleton**: added `src/features/rating/sync/sync-scheduler.ts` with a `SyncApiClient` structural interface (`sync` / `list`) that `CloudRatingApiClient` satisfies, a discriminated `SyncSchedulerStatus` union (`idle` / `syncing` / `error` / `unconfigured` — carrying `lastSyncAt` and error `message` where applicable), and a `SyncScheduler` class implementing the Phase 3 scheduler contract. Extended the `RatingRepository` contract with `listAll(): Promise<TimeSlotRating[]>` (implemented by `LocalRatingRepository` straight from storage including tombstones, passed through by `SyncingRatingRepository`) so the scheduler can compute `since` and LWW-merge without letting tombstones get clobbered by older remote rows. `start` flips the scheduler active (no-op when already started); `stop` clears debounce + retry timers and resets retry state. `notifyLocalChange` debounces doSync by 5s (rapid calls collapse into one fire). `pullNow` bypasses the debounce and runs doSync immediately. `doSync` emits `syncing`, collects `listPendingSync` + max local `updated_at` for `since`, calls `api.sync`, LWW-merges returned records by `updated_at` (older remote skipped; tombstones upsert and are auto-hidden by `LocalRatingRepository.list`), then `markSynced(id, server_time)` on each accepted record. Per-record `errors[]` are logged via `console.warn` without triggering backoff. Network / timeout / 5xx failures emit `{ kind: 'error', message, lastSyncAt }` and schedule retries at `5s, 30s, 2m, 5m, 5m…` capped at 5 minutes (unlimited attempts); error messages include countdown formatting (`网络异常 · {n}s 后重试`, `服务端异常 · {n}s 后重试`, `超时 · {n}s 后重试`). `401` / `403` / missing-token failures emit `token 无效` and never auto-retry — waiting for an explicit `start()` / `notifyLocalChange()`; a `notifyLocalChange` during backoff cancels the pending retry and restarts the 5s debounce. Exposes `getSyncScheduler(options?)` singleton plus `resetSyncSchedulerForTests()` for tests. Re-exported from `src/features/rating/sync/index.ts` and `src/features/rating/index.ts`; covered by `sync-scheduler.test.ts`.
 - **Cloud-sync Phase 5 — Settings cloud-sync section + detail-modal delete**: added `src/features/rating/sync/wiring.ts` with `SYNC_TOKEN_STORAGE_KEY = 'cs-rn:sync-token'`, `loadSyncToken` / `saveSyncToken` (empty/whitespace token triggers `clearSyncToken`) / `clearSyncToken` AsyncStorage helpers, and `getConfiguredSyncScheduler()` that lazily builds the `getSyncScheduler` singleton with `localRatingRepository` and a `CloudRatingApiClient` whose `getToken` reads the AsyncStorage key. Re-exported through the sync and rating barrels. Extended `app/settings.tsx` with a 云端同步 section above 数据管理: lucide `Cloud` icon (themed), secure `TextInput` for the token, save button that persists via `saveSyncToken` then calls `scheduler.start()` + `scheduler.pullNow()`, a status row subscribed to `scheduler.onStatusChange` with 30s `setInterval` refresh for relative `lastSyncAt` copy, and a 立即同步 debug button that calls `scheduler.notifyLocalChange()` + `scheduler.pullNow()`. Status copy covers unconfigured / idle (never or relative) / syncing / error (rendering the scheduler's message verbatim — network / server / timeout / `token 无效`). Added `onDelete` support to the rating detail modal in `app/rating.tsx` (destructive-styled button at the bottom of the card, `Alert.alert('删除这条打分？', '删除后本地列表和云端都不再显示，可通过同步协议恢复。', …)` with cancel + destructive-style `删除` confirm routing through `useRatings.remove` and closing the modal before refresh) — no list-level swipe/long-press delete introduced. Added Jest coverage in `app/settings.test.tsx` (section render, secure input, AsyncStorage write/remove, scheduler start+pullNow/notifyLocalChange+pullNow, status copy variants, 30s relative-time refresh with fake timers) and `app/rating.test.tsx` (delete button render + Alert copy/destructive style, cancel leaves record, destructive confirm removes + closes modal + refreshes list).
+- **Cloud-sync Phase 7 — Docs, manual verification, release build**: documented the cloud sync module end-to-end in Section 3 (module overview + layout table, separate write-path and pull-path diagrams, full error/retry table, and a status-lifecycle ASCII diagram) and extended Section 6 with the five-case manual test matrix (push visible via curl, VPS down → error → recovery, bad token → `token 无效` → fresh token push, 5-record fresh-token first-sync push, tombstone round-trip). Refreshed `Known v1 limitations` to call out encryption-at-rest posture for the Bearer token, single-user scope, and LWW-only conflict resolution. Fixed a residual TypeScript strict-mode error in `syncing-repository.test.ts` (`createMockLocal` returned `jest.Mocked<RatingRepository>`, which preserved the optional `subscribe?` property and broke `.mockReturnValue` on `local.subscribe!`) by widening the mock factory to `jest.Mocked<Required<RatingRepository>>` so every method is a concrete `jest.Mock`. After that, `npx tsc --noEmit` reports zero errors and the full Jest suite (31 suites, 187 tests) is green. The release APK is produced from this branch via the existing `android/gradlew.bat assembleRelease` flow documented in `BUILD_ANDROID.md` and the manual test matrix above is run against it before merge. No production code changes.
 - **Cloud-sync Phase 6 — Scheduler wired into app lifecycle + RatingServiceProvider**: added `src/features/rating/RatingServiceProvider.tsx` — a React context provider that synchronously constructs the shared `SyncScheduler` singleton (via `getSyncScheduler({ repository: localRatingRepository, apiClient: new CloudRatingApiClient({ getToken: loadSyncToken }), initialStatus: { kind: 'unconfigured' } })`), wraps `localRatingRepository` with `SyncingRatingRepository`, creates a fresh service via `createRatingService`, and calls `configureRatingsService` so the module-level `createRating` / `removeRating` / etc. exports route every write through the wrapper (and therefore through `scheduler.notifyLocalChange`). Refactored `src/features/rating/services/ratings.service.ts` to hold the service behind a mutable `ratingsService` variable and re-exposed the bound functions as forwarders plus a new `configureRatingsService(service)` / `getRatingsService()` pair (also re-exported from the rating feature barrel, along with the `RatingsService` type and `RatingServiceProvider` / `useRatingService` / `RatingServiceContextValue`). Extended `SyncScheduler.start()` so that calling it from the `unconfigured` state transitions the status to `idle { lastSyncAt: null }` — the boot-wiring flow needs an honest status once a token is attached, without having to also trigger a sync. On mount the provider effect reads `cs-rn:sync-token` from AsyncStorage and, if a non-empty token is present, calls `scheduler.start()` exactly once; otherwise the status stays `unconfigured`. The effect also subscribes to `AppState.addEventListener('change', …)` and calls `scheduler.pullNow()` only on transitions to `active`, with the subscription removed on unmount to prevent leaks. `apiClient.getToken = loadSyncToken` continues to read AsyncStorage on every request, so token edits from the Settings cloud-sync section take effect on the very next sync without rebuilding the scheduler. Integrated `RatingServiceProvider` into `app/_layout.tsx` (wrapping `TabLayout` inside `ThemeProvider`), so local saves/deletes auto-notify the scheduler and cloud sync is now end-to-end for the whole app. Added `src/features/rating/RatingServiceProvider.test.tsx` (save-through-service → `notifyLocalChange`, boot-with-token start-once, boot-without-token unconfigured + no-start, AppState active-only `pullNow`, AppState unmount cleanup, per-request AsyncStorage token freshness, context exposure via `useRatingService`) and extended `app/_layout.test.tsx` with a boot-wiring test confirming that rendering `RootLayout` with a stored token calls `scheduler.start()` once and lands in `idle { lastSyncAt: null }`.
 
 ---
@@ -556,9 +672,24 @@ Optional:
 - Open `SETTINGS` and run `导出打分数据`.
 - Verify the shared JSON is an array of complete `TimeSlotRating` records with `id`, `slot_start`, `slot_end`, `rating`, `efficiency`, `created_at`, `updated_at`, `synced_at`, and `schema_version: 1` fields, plus any optional `activity`, `mood`, `reflection`, or `linked_event_id` values that were saved.
 
+### Cloud sync manual test matrix
+
+Run on a real device with the release APK. Replace `<TOKEN>` with the configured Bearer token and `<BASE>` with the deployed VPS URL (default `https://api.epoch0.org`).
+
+| # | Scenario | Steps | Expected |
+|---|---|---|---|
+| 1 | Push visible via curl | In `SETTINGS` → `云端同步`, paste a valid token → save. Go to `RATING`, save a new rating. Wait ~5s. Run `curl -H "Authorization: Bearer <TOKEN>" "<BASE>/v1/ratings?since="`. | `GET /v1/ratings` returns the new record within ~5 s of the save. Settings status row reads `已同步 · 刚刚同步` (or relative seconds). |
+| 2 | VPS down → error → recovery | Stop the VPS (or point `<BASE>` at an unreachable URL). Save a rating. Watch the Settings status row cycle through `网络异常 · {n}s 后重试` countdowns. Restart the VPS. Pull the app to background then foreground (triggers `AppState` `active` → `pullNow`). | Status recovers to `已同步 · 刚刚同步` / relative `lastSyncAt`. The previously pending record is now visible via the `curl` probe from #1. |
+| 3 | Bad token | In `SETTINGS` → `云端同步`, paste an intentionally wrong token → save. Try `立即同步`. | Status reads `token 无效`. No background retries happen. After pasting the correct token and saving, the next push succeeds and status flips to `已同步 · 刚刚同步`. |
+| 4 | First-sync full push | Clear app data (or wipe `cs-rn:sync-token`). Create 5 local ratings while unauthenticated. Paste a fresh token → save. Foreground-activate the app. | All 5 local records push to the server on the first scheduler run. `GET /v1/ratings` returns all 5. Every pushed record now has a non-null `synced_at` (verifiable via `导出打分数据`). |
+| 5 | Tombstone round-trip | Open a rating from history → `删除` → confirm. Wait ~5 s for the 5 s debounce + push. `curl` the server to confirm the tombstone propagated. Trigger `立即同步` / foreground activate. | The record disappears locally and never resurrects after the next pull, even though the tombstone is still on the server. `curl <BASE>/v1/ratings?since=` continues to include the tombstone with `deleted_at` set. |
+
 ### Known v1 limitations
-- Cloud sync is now wired end-to-end through cloud-sync Phase 6: `RatingServiceProvider` swaps the module-level rating service to a `SyncingRatingRepository`-backed one at app boot, so every local save/delete auto-notifies the `SyncScheduler` (5s debounce), and `AppState` active transitions trigger a `pullNow`. The 立即同步 debug button and the settings token save still exist as manual paths. What remains out of scope: no conflict-resolution UI for LWW collisions, and scheduler-triggered merges still flow through `LocalRatingRepository` directly (not the wrapper), which is intentional — wiring the scheduler through the wrapper would loop merge-phase writes back into `notifyLocalChange`.
-- No MCP endpoint or server API beyond `/v1/ratings/sync` and `/v1/ratings?since=` for rating records.
+- Cloud sync is end-to-end through cloud-sync Phase 6: `RatingServiceProvider` swaps the module-level rating service to a `SyncingRatingRepository`-backed one at app boot, so every local save/delete auto-notifies the `SyncScheduler` (5 s debounce), and `AppState` active transitions trigger a `pullNow`. The `立即同步` debug button and the Settings token save still exist as manual paths. What remains out of scope: no conflict-resolution UI for LWW collisions, and scheduler-triggered merges still flow through `LocalRatingRepository` directly (not the wrapper) — wiring the scheduler through the wrapper would loop merge-phase writes back into `notifyLocalChange`.
+- No encryption at rest for the AsyncStorage-stored Bearer token beyond what the OS provides — treat the token as a device-bound secret.
+- Single-user only — no multi-account switching, and the server is expected to namespace by token.
+- LWW conflict resolution only — concurrent edits on two devices collapse by `updated_at`, with no user-facing conflict UI or merge affordance.
+- No MCP endpoint or server API beyond `POST /v1/ratings/sync` and `GET /v1/ratings?since=` for rating records.
 - No widget entry point for creating or viewing ratings.
 - No AI summary or analysis of rating history.
-- No edit flow exposed in the v1 UI; history card details are read-only.
+- No edit flow exposed in the v1 UI; history card details are read-only apart from the destructive `删除` action.

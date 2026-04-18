@@ -17,7 +17,7 @@ function makeRating(overrides: Partial<TimeSlotRating> = {}): TimeSlotRating {
   };
 }
 
-function createMockLocal(): jest.Mocked<RatingRepository> {
+function createMockLocal(): jest.Mocked<Required<RatingRepository>> {
   return {
     list: jest.fn().mockResolvedValue([]),
     listAll: jest.fn().mockResolvedValue([]),
