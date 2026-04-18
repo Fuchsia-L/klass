@@ -13,5 +13,6 @@ export interface TimeSlotRating {
   created_at: string;
   updated_at: string;
   synced_at?: string | null;
+  deleted_at?: string | null;
   schema_version: 1;
 }

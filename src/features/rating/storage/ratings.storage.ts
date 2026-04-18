@@ -46,6 +46,7 @@ function isTimeSlotRating(value: unknown): value is TimeSlotRating {
     isValidDateString(rating.created_at) &&
     isValidDateString(rating.updated_at) &&
     isOptionalSyncDate(rating.synced_at) &&
+    isOptionalSyncDate(rating.deleted_at) &&
     rating.schema_version === 1
   );
 }
