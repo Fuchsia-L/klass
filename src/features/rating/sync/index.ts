@@ -18,3 +18,6 @@ export type {
   SyncErrorOptions,
   TokenProvider,
 } from './api-client';
+
+export { SyncingRatingRepository } from './syncing-repository';
+export type { SyncScheduler } from './syncing-repository';

@@ -21,6 +21,7 @@ export {
   DEFAULT_CLOUD_RATING_TIMEOUT_MS,
   SyncError,
   SyncStateEmitter,
+  SyncingRatingRepository,
 } from './sync';
 export type {
   CloudRatingApiClientOptions,
@@ -31,6 +32,7 @@ export type {
   CloudRatingSyncResponse,
   FetchLike,
   SyncErrorOptions,
+  SyncScheduler,
   SyncStatus,
   SyncStatusListener,
   TokenProvider,
