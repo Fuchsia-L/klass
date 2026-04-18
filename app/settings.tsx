@@ -9,17 +9,54 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Cloud } from 'lucide-react-native';
 import { AppBar } from '../src/shared/components/AppBar';
 import { useTheme } from '../src/theme/ThemeContext';
 import { THEME_OPTIONS, getTheme } from '../src/theme';
 import { useSettingsForm } from '../src/features/settings';
 import { exportLocalRatingsAsJson } from '../src/features/settings/services/rating-export.service';
 import {
+  getConfiguredSyncScheduler,
+  saveSyncToken,
+  type SyncSchedulerStatus,
+} from '../src/features/rating';
+import {
   extractArrangedScheduleItems,
   importWhutArrangedList,
   WhutCourseTableResponseRaw,
 } from '../src/features/schedule';
 import { WhutImportModal, WhutImportStatus } from '../src/features/schedule/import/WhutImportModal';
+
+const RELATIVE_TIME_REFRESH_MS = 30_000;
+
+function formatRelativeSyncTime(iso: string, now: number): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '未知';
+  const diff = Math.max(0, now - then);
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return '刚刚';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} 分钟前`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  const days = Math.floor(hours / 24);
+  return `${days} 天前`;
+}
+
+function describeSyncStatus(status: SyncSchedulerStatus, now: number): string {
+  switch (status.kind) {
+    case 'unconfigured':
+      return '未配置云端同步';
+    case 'syncing':
+      return '同步中...';
+    case 'error':
+      return status.message;
+    case 'idle':
+    default:
+      if (!status.lastSyncAt) return '尚未同步';
+      return `同步于 ${formatRelativeSyncTime(status.lastSyncAt, now)}`;
+  }
+}
 
 const PREVIEW_COLORS: Array<keyof ReturnType<typeof getTheme>['colors']> = [
   'bg',
@@ -38,7 +75,53 @@ export default function SettingsScreen() {
   const [importedTermCode, setImportedTermCode] = React.useState<string | undefined>(undefined);
   const [hasStartedImport, setHasStartedImport] = React.useState(false);
   const [isExportingRatings, setIsExportingRatings] = React.useState(false);
+  const [syncTokenInput, setSyncTokenInput] = React.useState('');
+  const [isSavingToken, setIsSavingToken] = React.useState(false);
+  const [syncStatus, setSyncStatus] = React.useState<SyncSchedulerStatus>(() =>
+    getConfiguredSyncScheduler().getStatus(),
+  );
+  const [relativeTimeTick, setRelativeTimeTick] = React.useState(() => Date.now());
   const importGenerationRef = React.useRef(0);
+
+  React.useEffect(() => {
+    const scheduler = getConfiguredSyncScheduler();
+    setSyncStatus(scheduler.getStatus());
+    const unsubscribe = scheduler.onStatusChange(setSyncStatus);
+    return unsubscribe;
+  }, []);
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setRelativeTimeTick(Date.now());
+    }, RELATIVE_TIME_REFRESH_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSaveSyncToken = async () => {
+    if (isSavingToken) return;
+    setIsSavingToken(true);
+    try {
+      const trimmed = syncTokenInput.trim();
+      await saveSyncToken(trimmed);
+      setSyncTokenInput('');
+      if (trimmed.length > 0) {
+        const scheduler = getConfiguredSyncScheduler();
+        scheduler.start();
+        await scheduler.pullNow();
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '保存 token 失败，请稍后重试。';
+      Alert.alert('保存失败', message);
+    } finally {
+      setIsSavingToken(false);
+    }
+  };
+
+  const handleManualSync = async () => {
+    const scheduler = getConfiguredSyncScheduler();
+    scheduler.notifyLocalChange();
+    await scheduler.pullNow();
+  };
   const {
     form,
     loading,
@@ -330,6 +413,104 @@ export default function SettingsScreen() {
             />
           </View>
 
+          {/* Cloud Sync Section */}
+          <View
+            style={[
+              styles.section,
+              {
+                backgroundColor: theme.colors.card,
+                borderColor: theme.colors.cardBorder,
+              },
+            ]}
+            testID="cloud-sync-section"
+          >
+            <View style={styles.sectionHeaderRow}>
+              <Cloud size={18} color={theme.colors.primary} />
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  styles.sectionTitleInline,
+                  { color: theme.colors.primary, fontFamily: theme.fonts.heading },
+                ]}
+              >
+                云端同步
+              </Text>
+            </View>
+
+            <Text style={[styles.label, { color: theme.colors.textSub }]}>API Token</Text>
+            <TextInput
+              value={syncTokenInput}
+              onChangeText={setSyncTokenInput}
+              placeholder="输入 API token（留空可清除）"
+              placeholderTextColor={theme.colors.textSub}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.colors.inputBg,
+                  color: theme.colors.textMain,
+                  borderColor: theme.colors.divider,
+                },
+              ]}
+              testID="sync-token-input"
+            />
+
+            <TouchableOpacity
+              onPress={handleSaveSyncToken}
+              disabled={isSavingToken}
+              style={[
+                styles.dataButton,
+                {
+                  backgroundColor: theme.colors.inputBg,
+                  borderColor: theme.colors.primary,
+                  opacity: isSavingToken ? 0.7 : 1,
+                },
+              ]}
+              testID="save-sync-token-button"
+            >
+              <Text style={[styles.dataButtonText, { color: theme.colors.primary }]}>
+                {isSavingToken ? '保存中...' : '保存 token'}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.syncStatusRow} testID="sync-status-row">
+              <Text style={[styles.label, { color: theme.colors.textSub }]}>同步状态</Text>
+              <Text
+                style={[
+                  styles.syncStatusText,
+                  {
+                    color:
+                      syncStatus.kind === 'error'
+                        ? theme.colors.danger
+                        : syncStatus.kind === 'syncing'
+                          ? theme.colors.accent
+                          : theme.colors.textMain,
+                  },
+                ]}
+                testID="sync-status-text"
+              >
+                {describeSyncStatus(syncStatus, relativeTimeTick)}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={handleManualSync}
+              style={[
+                styles.dataButton,
+                {
+                  backgroundColor: theme.colors.inputBg,
+                  borderColor: theme.colors.divider,
+                  marginTop: 12,
+                },
+              ]}
+              testID="manual-sync-button"
+            >
+              <Text style={[styles.dataButtonText, { color: theme.colors.textMain }]}>立即同步</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Data Management Section */}
           <View
             style={[
@@ -468,6 +649,22 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     marginBottom: 12,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sectionTitleInline: {
+    marginBottom: 0,
+  },
+  syncStatusRow: {
+    marginTop: 4,
+  },
+  syncStatusText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   label: {
     fontSize: 12,

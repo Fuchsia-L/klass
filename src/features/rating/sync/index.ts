@@ -33,3 +33,11 @@ export type {
   SyncSchedulerStatus,
   SyncSchedulerStatusListener,
 } from './sync-scheduler';
+
+export {
+  SYNC_TOKEN_STORAGE_KEY,
+  clearSyncToken,
+  getConfiguredSyncScheduler,
+  loadSyncToken,
+  saveSyncToken,
+} from './wiring';

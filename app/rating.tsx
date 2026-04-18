@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -39,11 +40,25 @@ function formatSlotRange(rating: TimeSlotRating): string {
 function RatingDetailModal({
   rating,
   onClose,
+  onDelete,
 }: {
   rating: TimeSlotRating | null;
   onClose: () => void;
+  onDelete: (id: string) => void;
 }) {
   const theme = useTheme();
+
+  const handleDeletePress = () => {
+    if (!rating) return;
+    Alert.alert('删除这条打分？', '删除后本地列表和云端都不再显示，可通过同步协议恢复。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '删除',
+        style: 'destructive',
+        onPress: () => onDelete(rating.id),
+      },
+    ]);
+  };
 
   return (
     <Modal visible={!!rating} transparent animationType="fade" onRequestClose={onClose}>
@@ -100,6 +115,21 @@ function RatingDetailModal({
                   {rating.reflection?.trim() || '未填写反思'}
                 </Text>
               </ScrollView>
+
+              <TouchableOpacity
+                onPress={handleDeletePress}
+                style={[
+                  styles.detailDeleteButton,
+                  {
+                    backgroundColor: theme.colors.inputBg,
+                    borderColor: theme.colors.danger,
+                    borderRadius: theme.radius.button,
+                  },
+                ]}
+                testID="rating-detail-delete-button"
+              >
+                <Text style={[styles.detailDeleteText, { color: theme.colors.danger }]}>删除</Text>
+              </TouchableOpacity>
             </>
           ) : null}
         </Pressable>
@@ -110,7 +140,7 @@ function RatingDetailModal({
 
 export default function RatingScreen() {
   const theme = useTheme();
-  const { ratings, loading, error, refresh, save } = useRatings();
+  const { ratings, loading, error, refresh, save, remove } = useRatings();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [defaultSlot, setDefaultSlot] = useState(getDefaultRatingSlot);
   const [selectedRating, setSelectedRating] = useState<TimeSlotRating | null>(null);
@@ -122,6 +152,11 @@ export default function RatingScreen() {
 
   const handleSave = async (input: RatingInput, id?: string) => {
     await save(input, id);
+  };
+
+  const handleDelete = async (id: string) => {
+    setSelectedRating(null);
+    await remove(id);
   };
 
   return (
@@ -151,7 +186,11 @@ export default function RatingScreen() {
         onClose={() => setSheetVisible(false)}
       />
 
-      <RatingDetailModal rating={selectedRating} onClose={() => setSelectedRating(null)} />
+      <RatingDetailModal
+        rating={selectedRating}
+        onClose={() => setSelectedRating(null)}
+        onDelete={handleDelete}
+      />
     </View>
   );
 }
@@ -213,5 +252,15 @@ const styles = StyleSheet.create({
   },
   detailReflection: {
     paddingBottom: 8,
+  },
+  detailDeleteButton: {
+    marginTop: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+  },
+  detailDeleteText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

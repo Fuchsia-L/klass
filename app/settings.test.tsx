@@ -1,10 +1,12 @@
 import React from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import SettingsScreen from './settings';
 import { WhutImportModal } from '../src/features/schedule/import/WhutImportModal';
 import { loadEvents, resetEventsState } from '../src/features/schedule/services/events.service';
 import { clearEventsCache } from '../src/features/schedule/storage/events.storage';
+import type { SyncSchedulerStatus, SyncSchedulerStatusListener } from '../src/features/rating';
 
 jest.mock('react-native/Libraries/Modal/Modal', () => {
   const React = require('react');
@@ -56,6 +58,27 @@ jest.mock('../src/features/settings', () => ({
 jest.mock('../src/features/settings/services/rating-export.service', () => ({
   exportLocalRatingsAsJson: jest.fn(),
 }));
+
+jest.mock('../src/features/rating/sync/wiring', () => {
+  const mockScheduler = {
+    start: jest.fn(),
+    stop: jest.fn(),
+    pullNow: jest.fn().mockResolvedValue(undefined),
+    notifyLocalChange: jest.fn(),
+    getStatus: jest.fn(),
+    onStatusChange: jest.fn(),
+  };
+
+  return {
+    __esModule: true,
+    SYNC_TOKEN_STORAGE_KEY: 'cs-rn:sync-token',
+    getConfiguredSyncScheduler: jest.fn(() => mockScheduler),
+    loadSyncToken: jest.fn().mockResolvedValue(null),
+    saveSyncToken: jest.fn().mockResolvedValue(undefined),
+    clearSyncToken: jest.fn().mockResolvedValue(undefined),
+    __mockScheduler: mockScheduler,
+  };
+});
 
 jest.mock('../src/features/schedule/import/WhutImportWebViewContainer', () => {
   const React = require('react');
@@ -113,6 +136,35 @@ const { exportLocalRatingsAsJson } = jest.requireMock(
   exportLocalRatingsAsJson: jest.Mock;
 };
 
+const wiringMock = jest.requireMock('../src/features/rating/sync/wiring') as {
+  getConfiguredSyncScheduler: jest.Mock;
+  loadSyncToken: jest.Mock;
+  saveSyncToken: jest.Mock;
+  clearSyncToken: jest.Mock;
+  __mockScheduler: {
+    start: jest.Mock;
+    stop: jest.Mock;
+    pullNow: jest.Mock;
+    notifyLocalChange: jest.Mock;
+    getStatus: jest.Mock<SyncSchedulerStatus, []>;
+    onStatusChange: jest.Mock<() => void, [SyncSchedulerStatusListener]>;
+  };
+};
+
+function resetSyncSchedulerMock(initialStatus: SyncSchedulerStatus = { kind: 'idle', lastSyncAt: null }) {
+  const scheduler = wiringMock.__mockScheduler;
+  scheduler.start.mockReset();
+  scheduler.stop.mockReset();
+  scheduler.pullNow.mockReset().mockResolvedValue(undefined);
+  scheduler.notifyLocalChange.mockReset();
+  scheduler.getStatus.mockReset().mockReturnValue(initialStatus);
+  scheduler.onStatusChange.mockReset().mockImplementation(() => () => {});
+  wiringMock.getConfiguredSyncScheduler.mockClear();
+  wiringMock.loadSyncToken.mockReset().mockResolvedValue(null);
+  wiringMock.saveSyncToken.mockReset().mockResolvedValue(undefined);
+  wiringMock.clearSyncToken.mockReset().mockResolvedValue(undefined);
+}
+
 function buildSettingsFormMock(overrides?: Partial<ReturnType<typeof useSettingsForm>>) {
   return {
     form: {
@@ -139,6 +191,7 @@ describe('SettingsScreen WHUT import entry', () => {
       json: '[]',
       method: 'react-native-share',
     });
+    resetSyncSchedulerMock();
     resetEventsState();
     clearEventsCache();
   });
@@ -265,6 +318,7 @@ describe('SettingsScreen rating export', () => {
       json: '[{"id":"rating-1"}]',
       method: 'react-native-share',
     });
+    resetSyncSchedulerMock();
   });
 
   it('renders the rating export action and delegates to the export helper', async () => {
@@ -279,6 +333,202 @@ describe('SettingsScreen rating export', () => {
 
     expect(exportLocalRatingsAsJson).toHaveBeenCalledTimes(1);
     expect(alertSpy).toHaveBeenCalledWith('导出打分数据', '已准备 1 条打分记录。');
+  });
+});
+
+describe('SettingsScreen cloud sync section', () => {
+  beforeEach(() => {
+    useSettingsForm.mockReturnValue(buildSettingsFormMock());
+    exportLocalRatingsAsJson.mockResolvedValue({
+      count: 0,
+      json: '[]',
+      method: 'react-native-share',
+    });
+    resetSyncSchedulerMock();
+  });
+
+  it('renders the 云端同步 section above 数据管理 with a status row', async () => {
+    const { getByTestId, getByText } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('cloud-sync-section')).toBeTruthy();
+    });
+
+    expect(getByText('云端同步')).toBeTruthy();
+    expect(getByTestId('sync-token-input')).toBeTruthy();
+    expect(getByTestId('save-sync-token-button')).toBeTruthy();
+    expect(getByTestId('sync-status-row')).toBeTruthy();
+    expect(getByTestId('manual-sync-button')).toBeTruthy();
+  });
+
+  it('uses a secureTextEntry TextInput for the token field', async () => {
+    const { getByTestId } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('sync-token-input')).toBeTruthy();
+    });
+
+    const input = getByTestId('sync-token-input');
+    expect(input.props.secureTextEntry).toBe(true);
+  });
+
+  it('persists a new token to AsyncStorage and triggers scheduler.start + pullNow', async () => {
+    const setItemSpy = jest.spyOn(AsyncStorage, 'setItem');
+    const actualWiring = jest.requireActual('../src/features/rating/sync/wiring') as {
+      saveSyncToken: (token: string) => Promise<void>;
+    };
+    wiringMock.saveSyncToken.mockImplementation(actualWiring.saveSyncToken);
+
+    const { getByTestId } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('sync-token-input')).toBeTruthy();
+    });
+
+    fireEvent.changeText(getByTestId('sync-token-input'), 'secret-token-123');
+
+    await act(async () => {
+      fireEvent.press(getByTestId('save-sync-token-button'));
+    });
+
+    expect(wiringMock.saveSyncToken).toHaveBeenCalledWith('secret-token-123');
+    expect(setItemSpy).toHaveBeenCalledWith('cs-rn:sync-token', 'secret-token-123');
+    expect(wiringMock.__mockScheduler.start).toHaveBeenCalledTimes(1);
+    expect(wiringMock.__mockScheduler.pullNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes the AsyncStorage key when saving an empty token', async () => {
+    await AsyncStorage.setItem('cs-rn:sync-token', 'previous-token');
+    const removeSpy = jest.spyOn(AsyncStorage, 'removeItem');
+    const actualWiring = jest.requireActual('../src/features/rating/sync/wiring') as {
+      saveSyncToken: (token: string) => Promise<void>;
+    };
+    wiringMock.saveSyncToken.mockImplementation(actualWiring.saveSyncToken);
+
+    const { getByTestId } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('sync-token-input')).toBeTruthy();
+    });
+
+    fireEvent.changeText(getByTestId('sync-token-input'), '   ');
+
+    await act(async () => {
+      fireEvent.press(getByTestId('save-sync-token-button'));
+    });
+
+    expect(wiringMock.saveSyncToken).toHaveBeenCalledWith('');
+    expect(removeSpy).toHaveBeenCalledWith('cs-rn:sync-token');
+    expect(wiringMock.__mockScheduler.start).not.toHaveBeenCalled();
+    expect(wiringMock.__mockScheduler.pullNow).not.toHaveBeenCalled();
+    await waitFor(async () => {
+      expect(await AsyncStorage.getItem('cs-rn:sync-token')).toBeNull();
+    });
+  });
+
+  it('invokes scheduler.notifyLocalChange and scheduler.pullNow from the 立即同步 button', async () => {
+    const { getByTestId } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('manual-sync-button')).toBeTruthy();
+    });
+
+    await act(async () => {
+      fireEvent.press(getByTestId('manual-sync-button'));
+    });
+
+    expect(wiringMock.__mockScheduler.notifyLocalChange).toHaveBeenCalledTimes(1);
+    expect(wiringMock.__mockScheduler.pullNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the unconfigured status copy', async () => {
+    wiringMock.__mockScheduler.getStatus.mockReturnValue({ kind: 'unconfigured' });
+
+    const { getByTestId } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('sync-status-text').props.children).toBe('未配置云端同步');
+    });
+  });
+
+  it('renders the syncing status copy', async () => {
+    wiringMock.__mockScheduler.getStatus.mockReturnValue({
+      kind: 'syncing',
+      lastSyncAt: null,
+    });
+
+    const { getByTestId } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('sync-status-text').props.children).toBe('同步中...');
+    });
+  });
+
+  it('renders idle(never) and error message copy', async () => {
+    wiringMock.__mockScheduler.getStatus.mockReturnValue({
+      kind: 'idle',
+      lastSyncAt: null,
+    });
+
+    let listenerCapture: SyncSchedulerStatusListener | null = null;
+    wiringMock.__mockScheduler.onStatusChange.mockImplementation((listener) => {
+      listenerCapture = listener;
+      return () => {};
+    });
+
+    const { getByTestId } = render(<SettingsScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId('sync-status-text').props.children).toBe('尚未同步');
+    });
+
+    act(() => {
+      listenerCapture?.({
+        kind: 'error',
+        message: '网络异常 · 5s 后重试',
+        lastSyncAt: null,
+      });
+    });
+
+    expect(getByTestId('sync-status-text').props.children).toBe('网络异常 · 5s 后重试');
+
+    act(() => {
+      listenerCapture?.({
+        kind: 'error',
+        message: 'token 无效',
+        lastSyncAt: null,
+      });
+    });
+
+    expect(getByTestId('sync-status-text').props.children).toBe('token 无效');
+  });
+
+  it('refreshes relative-time label after 30 seconds without manual remount', async () => {
+    const baseTime = new Date('2026-04-18T12:00:00.000Z').getTime();
+    jest.useFakeTimers();
+    jest.setSystemTime(baseTime);
+
+    try {
+      wiringMock.__mockScheduler.getStatus.mockReturnValue({
+        kind: 'idle',
+        lastSyncAt: new Date(baseTime - 30 * 1000).toISOString(),
+      });
+
+      const { getByTestId } = render(<SettingsScreen />);
+
+      await waitFor(() => {
+        expect(getByTestId('sync-status-text').props.children).toBe('同步于 刚刚');
+      });
+
+      act(() => {
+        jest.setSystemTime(baseTime + 90 * 1000);
+        jest.advanceTimersByTime(30_000);
+      });
+
+      expect(getByTestId('sync-status-text').props.children).toBe('同步于 2 分钟前');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

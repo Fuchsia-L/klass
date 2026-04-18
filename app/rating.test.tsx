@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import RatingScreen from './rating';
 import { createRating } from '../src/features/rating/services';
@@ -214,5 +215,126 @@ describe('RatingScreen', () => {
     expect(getByText('focused')).toBeTruthy();
     expect(getByText('Kept a clean pace.')).toBeTruthy();
     expect(queryByText('保存')).toBeNull();
+  });
+
+  it('renders a 删除 button in the detail modal and triggers the Alert with the spec copy', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    let savedId = '';
+
+    await act(async () => {
+      const saved = await createRating({
+        slot_start: '2026-04-17T08:00:00.000Z',
+        slot_end: '2026-04-17T09:00:00.000Z',
+        rating: 3,
+        efficiency: 3,
+        activity: 'Block to delete',
+      });
+      savedId = saved.id;
+    });
+
+    const { getByTestId, getByText } = render(<RatingScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId(`rating-history-card-${savedId}`)).toBeTruthy();
+    });
+
+    fireEvent.press(getByTestId(`rating-history-card-${savedId}`));
+
+    const deleteButton = getByTestId('rating-detail-delete-button');
+    expect(deleteButton).toBeTruthy();
+    expect(getByText('删除')).toBeTruthy();
+
+    fireEvent.press(deleteButton);
+
+    expect(alertSpy).toHaveBeenCalledWith(
+      '删除这条打分？',
+      '删除后本地列表和云端都不再显示，可通过同步协议恢复。',
+      expect.any(Array),
+    );
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{
+      text: string;
+      style?: string;
+      onPress?: () => void;
+    }>;
+    const cancelButton = buttons.find((button) => button.text === '取消');
+    const deleteConfirmButton = buttons.find((button) => button.text === '删除');
+
+    expect(cancelButton?.style).toBe('cancel');
+    expect(deleteConfirmButton?.style).toBe('destructive');
+  });
+
+  it('leaves the record untouched when Alert is canceled', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    let savedId = '';
+
+    await act(async () => {
+      const saved = await createRating({
+        slot_start: '2026-04-17T08:00:00.000Z',
+        slot_end: '2026-04-17T09:00:00.000Z',
+        rating: 4,
+        efficiency: 4,
+        activity: 'Do not delete me',
+      });
+      savedId = saved.id;
+    });
+
+    const { getAllByText, getByTestId, queryByText } = render(<RatingScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId(`rating-history-card-${savedId}`)).toBeTruthy();
+    });
+
+    fireEvent.press(getByTestId(`rating-history-card-${savedId}`));
+    fireEvent.press(getByTestId('rating-detail-delete-button'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    const cancelButton = buttons.find((button) => button.text === '取消');
+
+    act(() => {
+      cancelButton?.onPress?.();
+    });
+
+    expect(getByTestId('rating-detail-modal')).toBeTruthy();
+    expect(getAllByText('Do not delete me').length).toBeGreaterThanOrEqual(2);
+    expect(queryByText('未填写活动')).toBeNull();
+  });
+
+  it('removes the rating, closes the modal, and refreshes the list on destructive confirm', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    let savedId = '';
+
+    await act(async () => {
+      const saved = await createRating({
+        slot_start: '2026-04-17T08:00:00.000Z',
+        slot_end: '2026-04-17T09:00:00.000Z',
+        rating: 2,
+        efficiency: 2,
+        activity: 'About to be deleted',
+      });
+      savedId = saved.id;
+    });
+
+    const { getByTestId, queryByTestId, queryByText } = render(<RatingScreen />);
+
+    await waitFor(() => {
+      expect(getByTestId(`rating-history-card-${savedId}`)).toBeTruthy();
+    });
+
+    fireEvent.press(getByTestId(`rating-history-card-${savedId}`));
+    fireEvent.press(getByTestId('rating-detail-delete-button'));
+
+    const buttons = alertSpy.mock.calls[0][2] as Array<{ text: string; onPress?: () => void }>;
+    const confirmButton = buttons.find((button) => button.text === '删除');
+
+    await act(async () => {
+      await confirmButton?.onPress?.();
+    });
+
+    await waitFor(() => {
+      expect(queryByTestId('rating-detail-modal')).toBeNull();
+      expect(queryByTestId(`rating-history-card-${savedId}`)).toBeNull();
+      expect(queryByText('About to be deleted')).toBeNull();
+    });
   });
 });

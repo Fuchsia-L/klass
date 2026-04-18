@@ -19,12 +19,17 @@ export {
   CloudRatingApiClient,
   DEFAULT_CLOUD_RATING_BASE_URL,
   DEFAULT_CLOUD_RATING_TIMEOUT_MS,
+  SYNC_TOKEN_STORAGE_KEY,
   SyncError,
   SyncScheduler,
   SyncStateEmitter,
   SyncingRatingRepository,
+  clearSyncToken,
+  getConfiguredSyncScheduler,
   getSyncScheduler,
+  loadSyncToken,
   resetSyncSchedulerForTests,
+  saveSyncToken,
 } from './sync';
 export type {
   CloudRatingApiClientOptions,
