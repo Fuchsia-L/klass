@@ -20,6 +20,7 @@ function makeRating(overrides: Partial<TimeSlotRating> = {}): TimeSlotRating {
 function createMockLocal(): jest.Mocked<RatingRepository> {
   return {
     list: jest.fn().mockResolvedValue([]),
+    listAll: jest.fn().mockResolvedValue([]),
     get: jest.fn().mockResolvedValue(null),
     save: jest.fn().mockResolvedValue(undefined),
     remove: jest.fn().mockResolvedValue(undefined),
@@ -182,6 +183,7 @@ describe('SyncingRatingRepository', () => {
   it('returns a no-op unsubscribe when local has no subscribe method', () => {
     const local: RatingRepository = {
       list: jest.fn().mockResolvedValue([]),
+      listAll: jest.fn().mockResolvedValue([]),
       get: jest.fn().mockResolvedValue(null),
       save: jest.fn().mockResolvedValue(undefined),
       remove: jest.fn().mockResolvedValue(undefined),

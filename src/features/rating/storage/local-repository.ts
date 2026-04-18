@@ -17,6 +17,10 @@ export class LocalRatingRepository implements RatingRepository {
     return ratings.filter((rating) => !isTombstoned(rating));
   }
 
+  async listAll(): Promise<TimeSlotRating[]> {
+    return listRatings();
+  }
+
   async get(id: string): Promise<TimeSlotRating | null> {
     const rating = await getRating(id);
     if (!rating || isTombstoned(rating)) return null;

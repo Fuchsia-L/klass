@@ -15,6 +15,10 @@ export class SyncingRatingRepository implements RatingRepository {
     return this.local.list();
   }
 
+  listAll(): Promise<TimeSlotRating[]> {
+    return this.local.listAll();
+  }
+
   get(id: string): Promise<TimeSlotRating | null> {
     return this.local.get(id);
   }

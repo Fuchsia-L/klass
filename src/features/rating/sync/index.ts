@@ -20,4 +20,16 @@ export type {
 } from './api-client';
 
 export { SyncingRatingRepository } from './syncing-repository';
-export type { SyncScheduler } from './syncing-repository';
+export type { SyncScheduler as SyncSchedulerContract } from './syncing-repository';
+
+export {
+  SyncScheduler,
+  getSyncScheduler,
+  resetSyncSchedulerForTests,
+} from './sync-scheduler';
+export type {
+  SyncApiClient,
+  SyncSchedulerOptions,
+  SyncSchedulerStatus,
+  SyncSchedulerStatusListener,
+} from './sync-scheduler';

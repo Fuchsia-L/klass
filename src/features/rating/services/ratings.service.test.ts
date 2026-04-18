@@ -12,6 +12,10 @@ class FakeRatingRepository implements RatingRepository {
     return this.ratings.map((rating) => ({ ...rating }));
   }
 
+  async listAll(): Promise<TimeSlotRating[]> {
+    return this.ratings.map((rating) => ({ ...rating }));
+  }
+
   async get(id: string): Promise<TimeSlotRating | null> {
     const rating = this.ratings.find((current) => current.id === id);
     return rating ? { ...rating } : null;
