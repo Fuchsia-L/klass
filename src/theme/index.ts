@@ -1,39 +1,31 @@
-import { ThemeConfig } from './types';
-import { cyberTheme } from './cyber';
-import { minimalTheme } from './minimal';
-import { sakuraTheme } from './sakura';
-import { midnightTheme } from './midnight';
-import { hanamiTheme } from './hanami';
-import { oceanTheme } from './ocean';
+import type { ThemeConfig } from './types';
+import { getAllPalettes, resolvePalette } from '../themes';
 
 export type { ThemeConfig };
 export type ThemeName = string;
 
 export const DEFAULT_THEME = 'cyber';
 
-const themes: Record<string, ThemeConfig> = {
-  cyber: cyberTheme,
-  minimal: minimalTheme,
-  sakura: sakuraTheme,
-  midnight: midnightTheme,
-  hanami: hanamiTheme,
-  ocean: oceanTheme,
-};
-
-export const THEME_OPTIONS: Array<{ name: string; label: string }> = Object.values(themes).map(
-  (t) => ({ name: t.id, label: t.name }),
-);
-
 export function isThemeName(value: string): boolean {
-  return value in themes;
+  return resolvePalette(value) !== null;
 }
 
 export function getTheme(name: string = DEFAULT_THEME): ThemeConfig {
-  return themes[name] ?? themes[DEFAULT_THEME];
+  return (
+    resolvePalette(name)?.palette.themeConfig ??
+    resolvePalette(DEFAULT_THEME)!.palette.themeConfig
+  );
 }
 
 export function getAllThemes(): Record<string, ThemeConfig> {
-  return themes;
+  const out: Record<string, ThemeConfig> = {};
+  for (const p of getAllPalettes()) {
+    out[p.id] = p.themeConfig;
+  }
+  return out;
 }
 
-export { cyberTheme, minimalTheme, sakuraTheme, midnightTheme, hanamiTheme, oceanTheme };
+export const THEME_OPTIONS: Array<{ name: string; label: string }> = getAllPalettes().map((p) => ({
+  name: p.id,
+  label: p.label,
+}));

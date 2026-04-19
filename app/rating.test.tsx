@@ -46,6 +46,7 @@ jest.mock('../src/shared/components/FAB', () => ({
 }));
 
 jest.mock('../src/theme/ThemeContext', () => ({
+  useThemeSettings: () => ({ themeName: 'cyber', setThemeName: jest.fn() }),
   useTheme: () => ({
     colors: {
       overlay: 'overlay',

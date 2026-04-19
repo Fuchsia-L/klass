@@ -1,4 +1,4 @@
-import { ThemeConfig } from './types';
+import { ThemeConfig } from '../../../theme/types';
 
 export const cyberTheme: ThemeConfig = {
   id: 'cyber',

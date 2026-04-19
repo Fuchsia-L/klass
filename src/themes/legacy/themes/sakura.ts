@@ -1,4 +1,4 @@
-import { ThemeConfig } from './types';
+import { ThemeConfig } from '../../../theme/types';
 
 export const sakuraTheme: ThemeConfig = {
   id: 'sakura',
