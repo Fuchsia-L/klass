@@ -13,12 +13,14 @@ import { X } from 'lucide-react-native';
 import { AppBar } from '../src/shared/components/AppBar';
 import { FAB } from '../src/shared/components/FAB';
 import {
+  DayView,
   RatingHistoryList,
   RatingInputSheet,
   StarRating,
   useRatings,
 } from '../src/features/rating';
 import type { RatingInput, TimeSlotRating } from '../src/features/rating';
+import { ScheduleEvent, useEvents } from '../src/features/schedule';
 import { formatLocalDate, formatTime } from '../src/shared/lib/date';
 import { useTheme } from '../src/theme/ThemeContext';
 
@@ -141,12 +143,30 @@ function RatingDetailModal({
 export default function RatingScreen() {
   const theme = useTheme();
   const { ratings, loading, error, refresh, save, remove } = useRatings();
+  const { events } = useEvents();
   const [sheetVisible, setSheetVisible] = useState(false);
   const [defaultSlot, setDefaultSlot] = useState(getDefaultRatingSlot);
   const [selectedRating, setSelectedRating] = useState<TimeSlotRating | null>(null);
+  const [activeTab, setActiveTab] = useState<'day' | 'list'>('day');
+  const [dayViewDate, setDayViewDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+  const [defaultEventForSheet, setDefaultEventForSheet] = useState<ScheduleEvent | undefined>();
 
   const openCreate = () => {
+    setDefaultEventForSheet(undefined);
     setDefaultSlot(getDefaultRatingSlot());
+    setSheetVisible(true);
+  };
+
+  const openCreateForEvent = (event: ScheduleEvent) => {
+    setDefaultEventForSheet(event);
+    setDefaultSlot({
+      start: new Date(event.start_time),
+      end: new Date(event.end_time),
+    });
     setSheetVisible(true);
   };
 
@@ -169,12 +189,50 @@ export default function RatingScreen() {
         </Text>
       ) : null}
 
-      <RatingHistoryList
-        ratings={ratings}
-        refreshing={loading}
-        onRefresh={refresh}
-        onPressItem={setSelectedRating}
-      />
+      <View style={styles.tabRow}>
+        <TouchableOpacity
+          onPress={() => setActiveTab('day')}
+          style={[
+            styles.tab,
+            { borderBottomColor: activeTab === 'day' ? theme.colors.primary : 'transparent' },
+          ]}
+          testID="rating-tab-day"
+        >
+          <Text style={[styles.tabText, { color: activeTab === 'day' ? theme.colors.primary : theme.colors.textSub }]}>
+            日视图
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setActiveTab('list')}
+          style={[
+            styles.tab,
+            { borderBottomColor: activeTab === 'list' ? theme.colors.primary : 'transparent' },
+          ]}
+          testID="rating-tab-list"
+        >
+          <Text style={[styles.tabText, { color: activeTab === 'list' ? theme.colors.primary : theme.colors.textSub }]}>
+            列表
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {activeTab === 'day' ? (
+        <DayView
+          events={events}
+          ratings={ratings}
+          date={dayViewDate}
+          onDateChange={setDayViewDate}
+          onPressEvent={openCreateForEvent}
+          onPressRating={setSelectedRating}
+        />
+      ) : (
+        <RatingHistoryList
+          ratings={ratings}
+          refreshing={loading}
+          onRefresh={refresh}
+          onPressItem={setSelectedRating}
+        />
+      )}
 
       <FAB onPress={openCreate} />
 
@@ -182,8 +240,12 @@ export default function RatingScreen() {
         visible={sheetVisible}
         defaultStart={defaultSlot.start}
         defaultEnd={defaultSlot.end}
+        defaultEvent={defaultEventForSheet}
         onSave={handleSave}
-        onClose={() => setSheetVisible(false)}
+        onClose={() => {
+          setSheetVisible(false);
+          setDefaultEventForSheet(undefined);
+        }}
       />
 
       <RatingDetailModal
@@ -204,6 +266,20 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     fontSize: 13,
     fontWeight: '600',
+  },
+  tabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 2,
+  },
+  tabText: {
+    fontSize: 13,
   },
   detailOverlay: {
     flex: 1,

@@ -24,7 +24,7 @@ export function StarRating({
   const theme = useTheme();
 
   return (
-    <View style={styles.row} testID={testID}>
+    <View style={[styles.row, disabled && styles.rowCompact]} testID={testID}>
       {VALUES.map((starValue) => {
         const active = starValue <= value;
         return (
@@ -37,7 +37,7 @@ export function StarRating({
             onPress={() => onChange?.(starValue)}
             testID={`${testID}-${starValue}`}
             style={({ pressed }) => [
-              styles.starButton,
+              disabled ? styles.starButtonCompact : styles.starButton,
               {
                 opacity: disabled ? 0.6 : 1,
                 transform: [{ scale: pressed && !disabled ? 0.86 : 1 }],
@@ -63,9 +63,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
+  rowCompact: {
+    gap: 2,
+  },
   starButton: {
     minWidth: 36,
     minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  starButtonCompact: {
     alignItems: 'center',
     justifyContent: 'center',
   },

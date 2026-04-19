@@ -1,10 +1,15 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { DayView } from './DayView';
 import { EfficiencySlider } from './EfficiencySlider';
+import { EventPicker } from './EventPicker';
 import { RatingHistoryList } from './RatingHistoryList';
 import { RatingInputSheet } from './RatingInputSheet';
 import { StarRating } from './StarRating';
 import type { TimeSlotRating } from '../types';
+import type { ScheduleEvent } from '../../schedule/types';
+
+let mockEvents: ScheduleEvent[] = [];
 
 jest.mock('../../../theme/ThemeContext', () => ({
   useTheme: () => ({
@@ -41,8 +46,18 @@ jest.mock('lucide-react-native', () => {
   return {
     Star: ({ color, fill }: { color: string; fill: string }) => <Text>{`star-${color}-${fill}`}</Text>,
     X: ({ color }: { color: string }) => <Text>{`x-${color}`}</Text>,
+    ChevronLeft: ({ color }: { color: string }) => <Text>{`chevron-left-${color}`}</Text>,
+    ChevronRight: ({ color }: { color: string }) => <Text>{`chevron-right-${color}`}</Text>,
   };
 });
+
+jest.mock('../../schedule/hooks/useEvents', () => ({
+  useEvents: () => ({
+    events: mockEvents,
+    loading: false,
+    refresh: jest.fn(),
+  }),
+}));
 
 jest.mock('../../schedule/components/DateTimePicker', () => ({
   __esModule: true,
@@ -73,6 +88,7 @@ function createRating(overrides: Partial<TimeSlotRating> = {}): TimeSlotRating {
     id: overrides.id ?? 'rating-1',
     slot_start: overrides.slot_start ?? '2026-04-17T08:00:00.000Z',
     slot_end: overrides.slot_end ?? '2026-04-17T09:00:00.000Z',
+    linked_event_id: overrides.linked_event_id,
     rating: overrides.rating ?? 4,
     efficiency: overrides.efficiency ?? 5,
     activity: overrides.activity,
@@ -85,7 +101,28 @@ function createRating(overrides: Partial<TimeSlotRating> = {}): TimeSlotRating {
   };
 }
 
+function createEvent(overrides: Partial<ScheduleEvent> = {}): ScheduleEvent {
+  return {
+    id: overrides.id ?? 'event-1',
+    title: overrides.title ?? 'Linear algebra',
+    category: overrides.category ?? '学习',
+    start_time: overrides.start_time ?? '2026-04-17T11:00:00.000Z',
+    end_time: overrides.end_time ?? '2026-04-17T11:55:00.000Z',
+    repeat: overrides.repeat ?? 'none',
+    repeat_until: overrides.repeat_until,
+    location: overrides.location,
+    reminder_minutes: overrides.reminder_minutes,
+    notes: overrides.notes,
+    source: overrides.source,
+    is_completed: overrides.is_completed ?? false,
+  };
+}
+
 describe('rating UI components', () => {
+  beforeEach(() => {
+    mockEvents = [];
+  });
+
   it('StarRating changes selected value when pressed', () => {
     const onChange = jest.fn();
     const { getByTestId } = render(<StarRating value={2} onChange={onChange} />);
@@ -150,6 +187,136 @@ describe('rating UI components', () => {
     });
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('RatingInputSheet event mode pre-selects the just-finished event when created within 30min window', () => {
+    mockEvents = [
+      createEvent({
+        id: 'just-finished',
+        title: '刚结束的日程',
+        start_time: '2026-04-17T11:00:00.000Z',
+        end_time: '2026-04-17T11:55:00.000Z',
+      }),
+    ];
+
+    const { getByTestId } = render(
+      <RatingInputSheet
+        visible
+        now={new Date('2026-04-17T12:00:00.000Z')}
+        onSave={jest.fn()}
+        onClose={jest.fn()}
+      />,
+    );
+
+    expect(getByTestId('rating-event-picker-item-just-finished').props.style).toEqual(
+      expect.objectContaining({ borderColor: 'primary' }),
+    );
+    expect(getByTestId('rating-event-picker')).toBeTruthy();
+  });
+
+  it('RatingInputSheet saves linked_event_id when event mode is used', async () => {
+    mockEvents = [
+      createEvent({
+        id: 'event-save',
+        title: 'Saved event title',
+        start_time: '2026-04-17T10:00:00.000Z',
+        end_time: '2026-04-17T10:45:00.000Z',
+      }),
+    ];
+    const onSave = jest.fn();
+    const onClose = jest.fn();
+    const { getByTestId, getByText } = render(
+      <RatingInputSheet
+        visible
+        now={new Date('2026-04-17T12:00:00.000Z')}
+        onSave={onSave}
+        onClose={onClose}
+      />,
+    );
+
+    fireEvent.press(getByTestId('rating-mode-event'));
+    fireEvent.press(getByTestId('rating-event-picker-item-event-save'));
+    fireEvent.press(getByTestId('star-rating-5'));
+    fireEvent.press(getByTestId('efficiency-slider-5'));
+    fireEvent.press(getByText('保存'));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          slot_start: '2026-04-17T10:00:00.000Z',
+          slot_end: '2026-04-17T10:45:00.000Z',
+          linked_event_id: 'event-save',
+          rating: 5,
+          efficiency: 5,
+          activity: 'Saved event title',
+        }),
+        undefined,
+      );
+    });
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('EventPicker renders events, selects rows, and shows an empty state', () => {
+    const onSelect = jest.fn();
+    const event = createEvent({ id: 'picker-event', title: 'Picker event' });
+    const { getByTestId, getByText, rerender } = render(
+      <EventPicker events={[event]} selectedEventId="picker-event" onSelect={onSelect} />,
+    );
+
+    expect(getByText('Picker event')).toBeTruthy();
+    fireEvent.press(getByTestId('rating-event-picker-item-picker-event'));
+    expect(onSelect).toHaveBeenCalledWith(event);
+
+    rerender(<EventPicker events={[]} onSelect={onSelect} />);
+    expect(getByText('最近没有日程')).toBeTruthy();
+  });
+
+  it('DayView renders same-day events and ratings and handles block taps', () => {
+    const event = createEvent({
+      id: 'day-event',
+      title: 'Day event',
+      start_time: '2026-04-17T08:00:00.000Z',
+      end_time: '2026-04-17T09:00:00.000Z',
+    });
+    const outsideEvent = createEvent({
+      id: 'outside-event',
+      title: 'Outside event',
+      start_time: '2026-04-18T08:00:00.000Z',
+      end_time: '2026-04-18T09:00:00.000Z',
+    });
+    const rating = createRating({
+      id: 'day-rating',
+      slot_start: '2026-04-17T10:00:00.000Z',
+      slot_end: '2026-04-17T11:00:00.000Z',
+      activity: 'Day rating',
+    });
+    const outsideRating = createRating({
+      id: 'outside-rating',
+      slot_start: '2026-04-18T10:00:00.000Z',
+      slot_end: '2026-04-18T11:00:00.000Z',
+    });
+    const onPressEvent = jest.fn();
+    const onPressRating = jest.fn();
+    const { getByTestId, queryByTestId } = render(
+      <DayView
+        events={[event, outsideEvent]}
+        ratings={[rating, outsideRating]}
+        date={new Date('2026-04-17T00:00:00.000Z')}
+        onDateChange={jest.fn()}
+        onPressEvent={onPressEvent}
+        onPressRating={onPressRating}
+        now={new Date('2026-04-17T12:00:00.000Z')}
+      />,
+    );
+
+    fireEvent.press(getByTestId('day-view-event-day-event-0'));
+    fireEvent.press(getByTestId('day-view-rating-day-rating'));
+
+    expect(onPressEvent).toHaveBeenCalledWith(event);
+    expect(onPressRating).toHaveBeenCalledWith(rating);
+    expect(queryByTestId('day-view-event-outside-event-0')).toBeNull();
+    expect(queryByTestId('day-view-rating-outside-rating')).toBeNull();
   });
 
   it('RatingHistoryList groups by date descending and renders themed cards', () => {

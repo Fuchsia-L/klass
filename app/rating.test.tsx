@@ -80,8 +80,18 @@ jest.mock('lucide-react-native', () => {
   return {
     Star: ({ color, fill }: { color: string; fill: string }) => <Text>{`star-${color}-${fill}`}</Text>,
     X: ({ color }: { color: string }) => <Text>{`x-${color}`}</Text>,
+    ChevronLeft: ({ color }: { color: string }) => <Text>{`chevron-left-${color}`}</Text>,
+    ChevronRight: ({ color }: { color: string }) => <Text>{`chevron-right-${color}`}</Text>,
   };
 });
+
+jest.mock('../src/features/schedule/hooks/useEvents', () => ({
+  useEvents: () => ({
+    events: [],
+    loading: false,
+    refresh: jest.fn(),
+  }),
+}));
 
 jest.mock('../src/features/rating', () => {
   const React = require('react');
@@ -130,6 +140,8 @@ describe('RatingScreen', () => {
   it('shows the empty history quip with the FAB direction indicator', async () => {
     const { getByTestId, getByText } = render(<RatingScreen />);
 
+    fireEvent.press(getByTestId('rating-tab-list'));
+
     await waitFor(() => {
       expect(getByTestId('rating-empty-state')).toBeTruthy();
     });
@@ -159,6 +171,8 @@ describe('RatingScreen', () => {
       fireEvent.press(getByTestId('mock-save-rating'));
     });
 
+    fireEvent.press(getByTestId('rating-tab-list'));
+
     await waitFor(() => {
       expect(queryByTestId('mock-rating-input-sheet')).toBeNull();
       expect(getByText('Mock focus')).toBeTruthy();
@@ -178,7 +192,9 @@ describe('RatingScreen', () => {
 
     clearRatingsCache();
 
-    const { getByText } = render(<RatingScreen />);
+    const { getByTestId, getByText } = render(<RatingScreen />);
+
+    fireEvent.press(getByTestId('rating-tab-list'));
 
     await waitFor(() => {
       expect(getByText('Persisted study block')).toBeTruthy();
@@ -202,6 +218,8 @@ describe('RatingScreen', () => {
     });
 
     const { getAllByText, getByTestId, getByText, queryByText } = render(<RatingScreen />);
+
+    fireEvent.press(getByTestId('rating-tab-list'));
 
     await waitFor(() => {
       expect(getByTestId(`rating-history-card-${savedId}`)).toBeTruthy();
@@ -233,6 +251,8 @@ describe('RatingScreen', () => {
     });
 
     const { getByTestId, getByText } = render(<RatingScreen />);
+
+    fireEvent.press(getByTestId('rating-tab-list'));
 
     await waitFor(() => {
       expect(getByTestId(`rating-history-card-${savedId}`)).toBeTruthy();
@@ -281,6 +301,8 @@ describe('RatingScreen', () => {
 
     const { getAllByText, getByTestId, queryByText } = render(<RatingScreen />);
 
+    fireEvent.press(getByTestId('rating-tab-list'));
+
     await waitFor(() => {
       expect(getByTestId(`rating-history-card-${savedId}`)).toBeTruthy();
     });
@@ -317,6 +339,8 @@ describe('RatingScreen', () => {
 
     const { getByTestId, queryByTestId, queryByText } = render(<RatingScreen />);
 
+    fireEvent.press(getByTestId('rating-tab-list'));
+
     await waitFor(() => {
       expect(getByTestId(`rating-history-card-${savedId}`)).toBeTruthy();
     });
@@ -335,6 +359,19 @@ describe('RatingScreen', () => {
       expect(queryByTestId('rating-detail-modal')).toBeNull();
       expect(queryByTestId(`rating-history-card-${savedId}`)).toBeNull();
       expect(queryByText('About to be deleted')).toBeNull();
+    });
+  });
+
+  it('defaults to 日视图 and reveals the history list from 列表', async () => {
+    const { getByTestId, getByText } = render(<RatingScreen />);
+
+    expect(getByTestId('day-view')).toBeTruthy();
+
+    fireEvent.press(getByTestId('rating-tab-list'));
+
+    await waitFor(() => {
+      expect(getByTestId('rating-empty-state')).toBeTruthy();
+      expect(getByText('列表')).toBeTruthy();
     });
   });
 });

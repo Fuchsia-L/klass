@@ -5,7 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
 } from 'react-native';
 import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useTheme } from '../src/theme/ThemeContext';
@@ -33,14 +33,14 @@ const HOUR_START = 6;
 const HOUR_END = 24;
 const HOUR_HEIGHT = MATRIX_HOUR_HEIGHT;
 const TIME_COL_WIDTH = 36;
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const DAY_COL_WIDTH = (SCREEN_WIDTH - TIME_COL_WIDTH) / 7;
 
 export default function MatrixScreen() {
   const theme = useTheme();
   const { events } = useEvents();
   const { semester } = useSemesterConfig();
   const scrollRef = useRef<ScrollView>(null);
+  const { width: screenWidth } = useWindowDimensions();
+  const dayColWidth = Math.max((screenWidth - TIME_COL_WIDTH) / 7, 1);
 
   const [weekOffset, setWeekOffset] = useState(0);
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -114,9 +114,9 @@ export default function MatrixScreen() {
 
     return {
       position: 'absolute' as const,
-      left: TIME_COL_WIDTH + dayIdx * DAY_COL_WIDTH + 1,
+      left: TIME_COL_WIDTH + dayIdx * dayColWidth + 1,
       top,
-      width: DAY_COL_WIDTH - 2,
+      width: dayColWidth - 2,
       height,
       backgroundColor: `${categoryColor}30`,
       borderLeftWidth: 3,
@@ -189,7 +189,7 @@ export default function MatrixScreen() {
         {weekDays.map((d, i) => {
           const isToday = isSameDay(d, now);
           return (
-            <View key={i} style={[styles.dayHeaderCell, { width: DAY_COL_WIDTH }]}>
+            <View key={i} style={[styles.dayHeaderCell, { width: dayColWidth }]}>
               <Text
                 style={[
                   styles.dayLabel,
@@ -239,7 +239,7 @@ export default function MatrixScreen() {
               style={[
                 styles.colDivider,
                 {
-                  left: TIME_COL_WIDTH + i * DAY_COL_WIDTH,
+                  left: TIME_COL_WIDTH + i * dayColWidth,
                   height: gridHeight,
                   borderLeftColor: theme.colors.divider,
                 },
@@ -254,9 +254,9 @@ export default function MatrixScreen() {
                 key={`tap-${dayIdx}-${h}`}
                 style={{
                   position: 'absolute',
-                  left: TIME_COL_WIDTH + dayIdx * DAY_COL_WIDTH,
+                  left: TIME_COL_WIDTH + dayIdx * dayColWidth,
                   top: (h - HOUR_START) * HOUR_HEIGHT,
-                  width: DAY_COL_WIDTH,
+                  width: dayColWidth,
                   height: HOUR_HEIGHT,
                 }}
                 activeOpacity={1}

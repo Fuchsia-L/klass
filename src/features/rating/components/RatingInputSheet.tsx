@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -13,9 +13,13 @@ import { X } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
 import { formatLocalDate, formatTime } from '../../../shared/lib/date';
 import DateTimePicker from '../../schedule/components/DateTimePicker';
+import { expandRepeatingEvents } from '../../schedule/domain/repeat';
+import { useEvents } from '../../schedule/hooks/useEvents';
+import type { ScheduleEvent } from '../../schedule/types';
 import type { RatingInput } from '../services';
 import type { RatingValue, TimeSlotRating } from '../types';
 import { EfficiencySlider } from './EfficiencySlider';
+import { EventPicker } from './EventPicker';
 import { StarRating } from './StarRating';
 
 interface RatingInputSheetProps {
@@ -23,12 +27,17 @@ interface RatingInputSheetProps {
   rating?: TimeSlotRating | null;
   defaultStart?: Date;
   defaultEnd?: Date;
+  now?: Date;
+  defaultEvent?: ScheduleEvent;
   onSave: (input: RatingInput, id?: string) => Promise<void> | void;
   onClose: () => void;
 }
 
 const DEFAULT_RATING: RatingValue = 3;
 const DEFAULT_EFFICIENCY: RatingValue = 3;
+const THIRTY_MINUTES_MS = 30 * 60 * 1000;
+
+type SlotMode = 'event' | 'custom';
 
 function getDefaultSlot(): { start: Date; end: Date } {
   const end = new Date();
@@ -40,18 +49,59 @@ function formatDateTime(date: Date): string {
   return `${formatLocalDate(date)} ${formatTime(date)}`;
 }
 
+function startOfDay(date: Date): Date {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function findJustFinishedEvent(events: ScheduleEvent[], now: Date): ScheduleEvent | undefined {
+  return events
+    .filter((event) => new Date(event.end_time).getTime() < now.getTime())
+    .sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime())[0];
+}
+
+function getEventOptions(events: ScheduleEvent[], evaluateNow: Date): ScheduleEvent[] {
+  const todayStart = startOfDay(evaluateNow);
+  const windowStart = addDays(todayStart, -2);
+  const windowEnd = addDays(todayStart, 1);
+
+  return expandRepeatingEvents(events, windowStart, windowEnd).sort(
+    (a, b) => new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
+  );
+}
+
 export function RatingInputSheet({
   visible,
   rating,
   defaultStart,
   defaultEnd,
+  now,
+  defaultEvent,
   onSave,
   onClose,
 }: RatingInputSheetProps) {
   const theme = useTheme();
+  const { events } = useEvents();
+  const eventsRef = useRef(events);
+  const nowRef = useRef(now);
+  eventsRef.current = events;
+  nowRef.current = now;
   const fallbackSlot = useMemo(getDefaultSlot, [visible]);
+  const eventOptions = useMemo(() => {
+    return getEventOptions(events, now ?? new Date());
+  }, [events, now, visible]);
   const [slotStart, setSlotStart] = useState(defaultStart ?? fallbackSlot.start);
   const [slotEnd, setSlotEnd] = useState(defaultEnd ?? fallbackSlot.end);
+  const [mode, setMode] = useState<SlotMode>('custom');
+  const [selectedEventId, setSelectedEventId] = useState<string>();
+  const [selectedEvent, setSelectedEvent] = useState<ScheduleEvent>();
   const [ratingValue, setRatingValue] = useState<RatingValue>(DEFAULT_RATING);
   const [efficiency, setEfficiency] = useState<RatingValue>(DEFAULT_EFFICIENCY);
   const [activity, setActivity] = useState('');
@@ -60,22 +110,65 @@ export function RatingInputSheet({
   const [pickerActive, setPickerActive] = useState(false);
   const [error, setError] = useState('');
 
+  const selectEvent = (event: ScheduleEvent, prefillActivity = true) => {
+    setSelectedEventId(event.id);
+    setSelectedEvent(event);
+    setSlotStart(new Date(event.start_time));
+    setSlotEnd(new Date(event.end_time));
+    if (prefillActivity) {
+      setActivity(event.title);
+    }
+  };
+
+  const activateEventMode = () => {
+    setMode('event');
+    if (!selectedEvent) {
+      const eventToSelect = findJustFinishedEvent(eventOptions, now ?? new Date());
+      if (eventToSelect) {
+        selectEvent(eventToSelect);
+      }
+    }
+  };
+
   useEffect(() => {
     if (!visible) return;
 
+    const evaluateNow = nowRef.current ?? new Date();
     const nextFallback = getDefaultSlot();
-    setSlotStart(rating ? new Date(rating.slot_start) : defaultStart ?? nextFallback.start);
-    setSlotEnd(rating ? new Date(rating.slot_end) : defaultEnd ?? nextFallback.end);
+    const resetEventOptions = getEventOptions(eventsRef.current, evaluateNow);
+    const linkedEvent = rating?.linked_event_id
+      ? resetEventOptions.find((event) => event.id === rating.linked_event_id)
+      : undefined;
+    const recentEvent = findJustFinishedEvent(resetEventOptions, evaluateNow);
+    const recentEventEnd = recentEvent ? new Date(recentEvent.end_time).getTime() : 0;
+    const eventToSelect = rating
+      ? linkedEvent
+      : defaultEvent ?? (
+          recentEvent && evaluateNow.getTime() - THIRTY_MINUTES_MS <= recentEventEnd
+            ? recentEvent
+            : undefined
+        );
+
+    setMode(eventToSelect ? 'event' : 'custom');
+    setSelectedEventId(eventToSelect?.id);
+    setSelectedEvent(eventToSelect);
+    setSlotStart(eventToSelect ? new Date(eventToSelect.start_time) : rating ? new Date(rating.slot_start) : defaultStart ?? nextFallback.start);
+    setSlotEnd(eventToSelect ? new Date(eventToSelect.end_time) : rating ? new Date(rating.slot_end) : defaultEnd ?? nextFallback.end);
     setRatingValue(rating?.rating ?? DEFAULT_RATING);
     setEfficiency(rating?.efficiency ?? DEFAULT_EFFICIENCY);
-    setActivity(rating?.activity ?? '');
+    setActivity(rating?.activity ?? eventToSelect?.title ?? '');
     setMood(rating?.mood ?? '');
     setReflection(rating?.reflection ?? '');
     setPickerActive(false);
     setError('');
-  }, [defaultEnd, defaultStart, rating, visible]);
+  }, [defaultEnd, defaultEvent, defaultStart, rating, visible]);
 
   const handleSave = async () => {
+    if (mode === 'event' && !selectedEvent) {
+      setError('请先选择事件');
+      return;
+    }
+
     if (slotEnd.getTime() <= slotStart.getTime()) {
       setError('结束时间必须晚于开始时间');
       return;
@@ -85,6 +178,7 @@ export function RatingInputSheet({
       {
         slot_start: slotStart.toISOString(),
         slot_end: slotEnd.toISOString(),
+        linked_event_id: mode === 'event' ? selectedEvent?.id : undefined,
         rating: ratingValue,
         efficiency,
         activity: activity.trim() || undefined,
@@ -127,26 +221,81 @@ export function RatingInputSheet({
           </View>
 
           <ScrollView style={styles.body} showsVerticalScrollIndicator={false} scrollEnabled={!pickerActive}>
-            <Text style={[styles.label, { color: theme.colors.textSub }]}>开始时间</Text>
-            <DateTimePicker
-              value={slotStart}
-              onChange={setSlotStart}
-              theme={theme}
-              minimumHour={0}
-              onPickerActive={setPickerActive}
-              testID="rating-slot-start-picker"
-            />
+            <View style={styles.segmentedRow}>
+              <TouchableOpacity
+                onPress={activateEventMode}
+                style={[
+                  styles.segment,
+                  {
+                    borderColor: mode === 'event' ? theme.colors.primary : theme.colors.divider,
+                    backgroundColor: mode === 'event' ? theme.colors.inputBg : theme.colors.bg,
+                    borderRadius: theme.radius.button,
+                  },
+                ]}
+                testID="rating-mode-event"
+              >
+                <Text style={[styles.segmentText, { color: mode === 'event' ? theme.colors.primary : theme.colors.textSub }]}>
+                  从日程选
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setMode('custom');
+                  setSelectedEventId(undefined);
+                  setSelectedEvent(undefined);
+                }}
+                style={[
+                  styles.segment,
+                  {
+                    borderColor: mode === 'custom' ? theme.colors.primary : theme.colors.divider,
+                    backgroundColor: mode === 'custom' ? theme.colors.inputBg : theme.colors.bg,
+                    borderRadius: theme.radius.button,
+                  },
+                ]}
+                testID="rating-mode-custom"
+              >
+                <Text style={[styles.segmentText, { color: mode === 'custom' ? theme.colors.primary : theme.colors.textSub }]}>
+                  自定义时段
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-            <Text style={[styles.label, { color: theme.colors.textSub }]}>结束时间</Text>
-            <DateTimePicker
-              value={slotEnd}
-              onChange={setSlotEnd}
-              theme={theme}
-              minimumHour={0}
-              allowMidnight24
-              onPickerActive={setPickerActive}
-              testID="rating-slot-end-picker"
-            />
+            {mode === 'event' ? (
+              <>
+                <EventPicker
+                  events={eventOptions}
+                  selectedEventId={selectedEventId}
+                  onSelect={(event) => selectEvent(event)}
+                />
+                <Text style={[styles.label, { color: theme.colors.textSub }]}>已选时段</Text>
+                <Text style={[styles.readOnlySlot, { color: theme.colors.textMain, borderColor: theme.colors.divider }]}>
+                  {selectedEvent ? `${formatLocalDate(slotStart)} ${formatTime(slotStart)} - ${formatTime(slotEnd)}` : '未选择'}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={[styles.label, { color: theme.colors.textSub }]}>开始时间</Text>
+                <DateTimePicker
+                  value={slotStart}
+                  onChange={setSlotStart}
+                  theme={theme}
+                  minimumHour={0}
+                  onPickerActive={setPickerActive}
+                  testID="rating-slot-start-picker"
+                />
+
+                <Text style={[styles.label, { color: theme.colors.textSub }]}>结束时间</Text>
+                <DateTimePicker
+                  value={slotEnd}
+                  onChange={setSlotEnd}
+                  theme={theme}
+                  minimumHour={0}
+                  allowMidnight24
+                  onPickerActive={setPickerActive}
+                  testID="rating-slot-end-picker"
+                />
+              </>
+            )}
 
             <Text style={[styles.label, { color: theme.colors.textSub }]}>Rating</Text>
             <StarRating value={ratingValue} onChange={setRatingValue} />
@@ -290,6 +439,21 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: 16,
   },
+  segmentedRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 4,
+  },
+  segment: {
+    flex: 1,
+    alignItems: 'center',
+    borderWidth: 1,
+    paddingVertical: 9,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
   label: {
     fontSize: 12,
     fontWeight: '600',
@@ -306,6 +470,12 @@ const styles = StyleSheet.create({
   textArea: {
     minHeight: 82,
     textAlignVertical: 'top',
+  },
+  readOnlySlot: {
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
   },
   error: {
     marginTop: 12,

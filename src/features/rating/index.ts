@@ -1,5 +1,5 @@
 export { useRatings } from './hooks';
-export { EfficiencySlider, RatingHistoryList, RatingInputSheet, StarRating } from './components';
+export { DayView, EfficiencySlider, EventPicker, RatingHistoryList, RatingInputSheet, StarRating } from './components';
 export {
   RatingServiceProvider,
   useRatingService,
