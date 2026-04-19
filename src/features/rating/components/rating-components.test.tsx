@@ -19,6 +19,7 @@ jest.mock('../../../theme/ThemeContext', () => ({
       card: 'card',
       cardBorder: 'cardBorder',
       primary: 'primary',
+      ratingFill: 'ratingFill',
       accent: 'accent',
       success: 'success',
       danger: 'danger',

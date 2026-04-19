@@ -68,6 +68,10 @@ function getPosition(startIso: string, endIso: string, dayStart: Date) {
 }
 
 function withAlpha(color: string, alpha: number): string {
+  if (typeof color !== 'string') {
+    return 'transparent';
+  }
+
   const normalized = color.replace('#', '');
   if (/^[0-9a-fA-F]{6}$/.test(normalized)) {
     const r = parseInt(normalized.slice(0, 2), 16);
