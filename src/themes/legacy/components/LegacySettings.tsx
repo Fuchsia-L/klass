@@ -12,7 +12,8 @@ import {
 import { Cloud } from 'lucide-react-native';
 import { AppBar } from '../../../shared/components/AppBar';
 import { useTheme } from '../../../theme/ThemeContext';
-import { THEME_OPTIONS, getTheme } from '../../../theme';
+import { themePackages } from '../../../themes';
+import type { ThemeConfig } from '../../../theme';
 import { useSettingsForm } from '../../../features/settings';
 import { exportLocalRatingsAsJson } from '../../../features/settings/services/rating-export.service';
 import {
@@ -58,13 +59,18 @@ function describeSyncStatus(status: SyncSchedulerStatus, now: number): string {
   }
 }
 
-const PREVIEW_COLORS: Array<keyof ReturnType<typeof getTheme>['colors']> = [
+const PREVIEW_COLORS: Array<keyof ThemeConfig['colors']> = [
   'bg',
   'primary',
   'accent',
   'success',
   'card',
 ];
+
+const PACKAGE_DISPLAY_LABEL: Record<string, string> = {
+  legacy: '经典',
+  minimal: 'Minimal',
+};
 
 export function LegacySettings() {
   const theme = useTheme();
@@ -291,73 +297,89 @@ export function LegacySettings() {
             >
               主题
             </Text>
-            <View style={styles.themeGrid}>
-              {THEME_OPTIONS.map((option) => {
-                const preview = getTheme(option.name);
-                const isSelected = option.name === themeName;
-                return (
-                  <TouchableOpacity
-                    key={option.name}
-                    activeOpacity={0.7}
-                    onPress={() => setThemeName(option.name)}
+            {themePackages.map((pkg, pkgIndex) => {
+              const displayLabel = PACKAGE_DISPLAY_LABEL[pkg.id] ?? pkg.name;
+              return (
+                <View key={pkg.id}>
+                  <Text
                     style={[
-                      styles.themeCard,
-                      {
-                        backgroundColor: preview.colors.bg,
-                        borderColor: isSelected
-                          ? preview.colors.primary
-                          : preview.colors.cardBorder,
-                        borderWidth: isSelected ? 2 : 1,
-                      },
+                      styles.groupHeader,
+                      { color: theme.colors.textSub },
+                      pkgIndex > 0 && styles.groupHeaderSpaced,
                     ]}
                   >
-                    <View style={styles.colorDots}>
-                      {PREVIEW_COLORS.map((colorKey) => (
-                        <View
-                          key={colorKey}
+                    {displayLabel}
+                  </Text>
+                  <View style={styles.themeGrid}>
+                    {pkg.palettes.map((palette) => {
+                      const preview = palette.themeConfig;
+                      const isSelected = palette.id === themeName;
+                      return (
+                        <TouchableOpacity
+                          key={palette.id}
+                          activeOpacity={0.7}
+                          onPress={() => setThemeName(palette.id)}
                           style={[
-                            styles.colorDot,
+                            styles.themeCard,
                             {
-                              backgroundColor: preview.colors[colorKey],
-                              borderColor:
-                                colorKey === 'bg'
-                                  ? preview.colors.cardBorder
-                                  : 'transparent',
-                              borderWidth: colorKey === 'bg' ? 1 : 0,
+                              backgroundColor: preview.colors.bg,
+                              borderColor: isSelected
+                                ? preview.colors.primary
+                                : preview.colors.cardBorder,
+                              borderWidth: isSelected ? 2 : 1,
                             },
                           ]}
-                        />
-                      ))}
-                    </View>
-                    <Text
-                      style={[
-                        styles.themeLabel,
-                        {
-                          color: isSelected
-                            ? preview.colors.primary
-                            : preview.colors.textSub,
-                          fontWeight: isSelected ? '700' : '400',
-                        },
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                    {isSelected && (
-                      <View
-                        style={[
-                          styles.selectedBadge,
-                          { backgroundColor: preview.colors.primary },
-                        ]}
-                      >
-                        <Text style={[styles.selectedBadgeText, { color: preview.colors.bg }]}>
-                          ✓
-                        </Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                        >
+                          <View style={styles.colorDots}>
+                            {PREVIEW_COLORS.map((colorKey) => (
+                              <View
+                                key={colorKey}
+                                style={[
+                                  styles.colorDot,
+                                  {
+                                    backgroundColor: preview.colors[colorKey],
+                                    borderColor:
+                                      colorKey === 'bg'
+                                        ? preview.colors.cardBorder
+                                        : 'transparent',
+                                    borderWidth: colorKey === 'bg' ? 1 : 0,
+                                  },
+                                ]}
+                              />
+                            ))}
+                          </View>
+                          <Text
+                            style={[
+                              styles.themeLabel,
+                              {
+                                color: isSelected
+                                  ? preview.colors.primary
+                                  : preview.colors.textSub,
+                                fontWeight: isSelected ? '700' : '400',
+                              },
+                            ]}
+                          >
+                            {palette.label}
+                          </Text>
+                          {isSelected && (
+                            <View
+                              style={[
+                                styles.selectedBadge,
+                                { backgroundColor: preview.colors.primary },
+                              ]}
+                            >
+                              <Text style={[styles.selectedBadgeText, { color: preview.colors.bg }]}>
+                                ✓
+                              </Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })}
           </View>
 
           {/* Semester Section */}
@@ -683,6 +705,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
+  },
+  groupHeader: {
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  groupHeaderSpaced: {
+    marginTop: 16,
   },
   themeCard: {
     width: '47%' as any,
