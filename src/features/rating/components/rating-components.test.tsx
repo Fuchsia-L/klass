@@ -48,6 +48,7 @@ jest.mock('lucide-react-native', () => {
     X: ({ color }: { color: string }) => <Text>{`x-${color}`}</Text>,
     ChevronLeft: ({ color }: { color: string }) => <Text>{`chevron-left-${color}`}</Text>,
     ChevronRight: ({ color }: { color: string }) => <Text>{`chevron-right-${color}`}</Text>,
+    Plus: ({ color }: { color: string }) => <Text>{`plus-${color}`}</Text>,
   };
 });
 
@@ -273,11 +274,17 @@ describe('rating UI components', () => {
   });
 
   it('DayView renders same-day events and ratings and handles block taps', () => {
-    const event = createEvent({
-      id: 'day-event',
-      title: 'Day event',
+    const ratedEvent = createEvent({
+      id: 'rated-event',
+      title: 'Rated event',
       start_time: '2026-04-17T08:00:00.000Z',
       end_time: '2026-04-17T09:00:00.000Z',
+    });
+    const unratedEvent = createEvent({
+      id: 'unrated-event',
+      title: 'Unrated event',
+      start_time: '2026-04-17T09:00:00.000Z',
+      end_time: '2026-04-17T10:00:00.000Z',
     });
     const outsideEvent = createEvent({
       id: 'outside-event',
@@ -285,11 +292,20 @@ describe('rating UI components', () => {
       start_time: '2026-04-18T08:00:00.000Z',
       end_time: '2026-04-18T09:00:00.000Z',
     });
-    const rating = createRating({
-      id: 'day-rating',
+    const matchedRating = createRating({
+      id: 'matched-rating',
+      linked_event_id: 'rated-event',
+      slot_start: '2026-04-17T08:00:00.000Z',
+      slot_end: '2026-04-17T09:00:00.000Z',
+      activity: 'Rated activity note',
+      rating: 5,
+      efficiency: 4,
+    });
+    const customRating = createRating({
+      id: 'custom-rating',
       slot_start: '2026-04-17T10:00:00.000Z',
       slot_end: '2026-04-17T11:00:00.000Z',
-      activity: 'Day rating',
+      activity: 'Custom rating',
     });
     const outsideRating = createRating({
       id: 'outside-rating',
@@ -298,10 +314,10 @@ describe('rating UI components', () => {
     });
     const onPressEvent = jest.fn();
     const onPressRating = jest.fn();
-    const { getByTestId, queryByTestId } = render(
+    const { getByTestId, getByText, queryByTestId } = render(
       <DayView
-        events={[event, outsideEvent]}
-        ratings={[rating, outsideRating]}
+        events={[ratedEvent, unratedEvent, outsideEvent]}
+        ratings={[matchedRating, customRating, outsideRating]}
         date={new Date('2026-04-17T00:00:00.000Z')}
         onDateChange={jest.fn()}
         onPressEvent={onPressEvent}
@@ -310,11 +326,17 @@ describe('rating UI components', () => {
       />,
     );
 
-    fireEvent.press(getByTestId('day-view-event-day-event-0'));
-    fireEvent.press(getByTestId('day-view-rating-day-rating'));
+    expect(getByText('注：Rated activity note')).toBeTruthy();
+    expect(getByText('plus-textSub')).toBeTruthy();
 
-    expect(onPressEvent).toHaveBeenCalledWith(event);
-    expect(onPressRating).toHaveBeenCalledWith(rating);
+    fireEvent.press(getByTestId('day-view-event-rated-event-0'));
+    fireEvent.press(getByTestId('day-view-event-unrated-event-1'));
+    fireEvent.press(getByTestId('day-view-rating-custom-rating'));
+
+    expect(onPressRating).toHaveBeenCalledWith(matchedRating);
+    expect(onPressEvent).toHaveBeenCalledWith(unratedEvent);
+    expect(onPressRating).toHaveBeenCalledWith(customRating);
+    expect(onPressEvent).not.toHaveBeenCalledWith(ratedEvent);
     expect(queryByTestId('day-view-event-outside-event-0')).toBeNull();
     expect(queryByTestId('day-view-rating-outside-rating')).toBeNull();
   });

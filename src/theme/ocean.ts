@@ -10,6 +10,7 @@ export const oceanTheme: ThemeConfig = {
     primary: '#4CC9F0',
     accent: '#7B8CFF',
     success: '#34D399',
+    ratingFill: '#F59E0B',
     danger: '#F87171',
     warning: '#FBBF24',
     textMain: '#E0F2FE',

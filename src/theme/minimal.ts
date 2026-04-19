@@ -10,6 +10,7 @@ export const minimalTheme: ThemeConfig = {
     primary: '#1F2937',
     accent: '#6B7280',
     success: '#059669',
+    ratingFill: '#3B82F6',
     danger: '#EF4444',
     textMain: '#111827',
     textSub: '#9CA3AF',

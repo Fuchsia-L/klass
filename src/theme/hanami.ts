@@ -10,6 +10,7 @@ export const hanamiTheme: ThemeConfig = {
     primary: '#C84C7A',
     accent: '#F28AB2',
     success: '#4CA97A',
+    ratingFill: '#F59E0B',
     danger: '#D94B6A',
     warning: '#E6A23C',
     textMain: '#402A35',

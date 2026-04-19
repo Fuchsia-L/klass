@@ -10,6 +10,7 @@ export const midnightTheme: ThemeConfig = {
     primary: '#C9A84C',
     accent: '#8B5CF6',
     success: '#34D399',
+    ratingFill: '#00F0FF',
     danger: '#EF4444',
     textMain: '#EDE9FE',
     textSub: '#7C6F9B',

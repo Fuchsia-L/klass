@@ -1,17 +1,15 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react-native';
 import { useTheme } from '../../../theme/ThemeContext';
 import { isSameDay } from '../../../shared/lib/date';
 import {
   getCategoryColor,
-  MatrixEventBlock,
   MATRIX_HOUR_HEIGHT,
   ScheduleEvent,
 } from '../../schedule';
 import { expandRepeatingEvents } from '../../schedule/domain/repeat';
 import type { TimeSlotRating } from '../types';
-import { StarRating } from './StarRating';
 
 interface DayViewProps {
   events: ScheduleEvent[];
@@ -27,8 +25,6 @@ interface DayViewProps {
 const HOUR_START = 6;
 const HOUR_END = 24;
 const TIME_COL_WIDTH = 36;
-const EVENT_COL_PERCENT = '42%';
-const RATING_COL_PERCENT = '58%';
 const WEEKDAY_ZH = ['日', '一', '二', '三', '四', '五', '六'];
 
 function startOfDay(date: Date): Date {
@@ -71,6 +67,18 @@ function getPosition(startIso: string, endIso: string, dayStart: Date) {
   };
 }
 
+function withAlpha(color: string, alpha: number): string {
+  const normalized = color.replace('#', '');
+  if (/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    const r = parseInt(normalized.slice(0, 2), 16);
+    const g = parseInt(normalized.slice(2, 4), 16);
+    const b = parseInt(normalized.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  return color;
+}
+
 export function DayView({
   events,
   ratings,
@@ -106,6 +114,21 @@ export function DayView({
     for (const e of dayEvents) map.set(e.id, e);
     return map;
   }, [dayEvents]);
+
+  const ratingByEventId = useMemo(() => {
+    const map = new Map<string, TimeSlotRating>();
+    for (const rating of dayRatings) {
+      if (rating.linked_event_id && eventById.has(rating.linked_event_id) && !map.has(rating.linked_event_id)) {
+        map.set(rating.linked_event_id, rating);
+      }
+    }
+    return map;
+  }, [dayRatings, eventById]);
+
+  const customRatings = useMemo(
+    () => dayRatings.filter((rating) => !rating.linked_event_id || !eventById.has(rating.linked_event_id)),
+    [dayRatings, eventById],
+  );
 
   const currentTimeOffset = useMemo(() => {
     const hoursFromStart = getHours(now) - HOUR_START;
@@ -167,83 +190,127 @@ export function DayView({
             </View>
           ))}
 
-          <View style={[styles.columns, { left: TIME_COL_WIDTH }]}>
-            <View style={[styles.eventColumn, { borderLeftColor: theme.colors.divider }]}>
-              {dayEvents.map((event, index) => {
-                const position = getPosition(event.start_time, event.end_time, dayStart);
-                if (!position) return null;
-                const categoryColor = getCategoryColor(theme, event.category);
+          <View style={[styles.timeline, { left: TIME_COL_WIDTH, borderLeftColor: theme.colors.divider }]}>
+            {dayEvents.map((event, index) => {
+              const position = getPosition(event.start_time, event.end_time, dayStart);
+              if (!position) return null;
 
-                return (
-                  <MatrixEventBlock
-                    key={`${event.id}-${event.start_time}-${index}`}
-                    event={event}
-                    height={position.height}
-                    style={[
-                      styles.block,
-                      {
-                        top: position.top,
-                        left: 1,
-                        width: '98%',
-                        height: position.height,
-                        backgroundColor: `${categoryColor}30`,
-                        borderLeftColor: categoryColor,
-                      },
-                    ]}
-                    onPress={() => onPressEvent(event)}
-                    titleColor={theme.colors.textMain}
-                    locationColor={theme.colors.textSub}
-                    testID={`${testID}-event-${event.id}-${index}`}
-                  />
-                );
-              })}
-            </View>
-            <View style={[styles.ratingColumn, { borderLeftColor: theme.colors.divider }]}>
-              {dayRatings.map((rating) => {
-                const position = getPosition(rating.slot_start, rating.slot_end, dayStart);
-                if (!position) return null;
+              const categoryColor = getCategoryColor(theme, event.category);
+              const matchedRating = ratingByEventId.get(event.id);
+              const compact = position.height < 48;
+              const showRatingStrip = matchedRating != null && position.height >= 42;
+              const activityText = matchedRating?.activity?.trim() ?? '';
+              const showActivity =
+                matchedRating != null &&
+                !compact &&
+                activityText.length > 0 &&
+                activityText !== event.title.trim();
+              const ratedAlpha = matchedRating
+                ? (Math.min(Math.max(matchedRating.rating, 1), 5) - 1) / 4
+                : 0;
 
-                const linkedEvent = rating.linked_event_id
-                  ? eventById.get(rating.linked_event_id)
-                  : undefined;
-                const activityText = rating.activity?.trim() ?? '';
-                const activityRedundant =
-                  linkedEvent != null && activityText === linkedEvent.title.trim();
-                const showActivity = activityText.length > 0 && !activityRedundant;
-
-                return (
-                  <TouchableOpacity
-                    key={rating.id}
-                    onPress={() => onPressRating(rating)}
-                    activeOpacity={0.75}
-                    testID={`${testID}-rating-${rating.id}`}
-                    style={[
-                      styles.ratingBlock,
-                      {
-                        top: position.top,
-                        height: position.height,
-                        backgroundColor: theme.colors.card,
-                        borderColor: theme.colors.cardBorder,
-                        borderLeftColor: theme.colors.primary,
-                        borderRadius: 4,
-                      },
-                    ]}
-                  >
-                    {showActivity ? (
-                      <Text style={[styles.activity, { color: theme.colors.textMain }]} numberOfLines={2}>
-                        {activityText}
-                      </Text>
-                    ) : null}
-                    <View style={[styles.ratingMeta, showActivity && styles.ratingMetaBelow]}>
-                      <StarRating value={rating.rating} disabled size={12} testID={`${testID}-rating-${rating.id}-stars`} />
-                      <Text style={[styles.efficiency, { color: theme.colors.success, fontFamily: theme.fonts.heading }]}>
-                        EFF {rating.efficiency}
-                      </Text>
+              return (
+                <TouchableOpacity
+                  key={`${event.id}-${event.start_time}-${index}`}
+                  onPress={() => {
+                    if (matchedRating) {
+                      onPressRating(matchedRating);
+                    } else {
+                      onPressEvent(event);
+                    }
+                  }}
+                  activeOpacity={0.75}
+                  testID={`${testID}-event-${event.id}-${index}`}
+                  style={[
+                    styles.block,
+                    {
+                      top: position.top,
+                      left: 2,
+                      right: 4,
+                      height: position.height,
+                      backgroundColor: matchedRating
+                        ? withAlpha(theme.colors.ratingFill, ratedAlpha)
+                        : withAlpha(categoryColor, 0.18),
+                      borderColor: matchedRating
+                        ? withAlpha(theme.colors.ratingFill, 0.45)
+                        : withAlpha(categoryColor, 0.35),
+                      borderLeftColor: matchedRating
+                        ? withAlpha(theme.colors.ratingFill, 0.85)
+                        : withAlpha(categoryColor, 0.75),
+                    },
+                  ]}
+                >
+                  <Text style={[styles.eventTitle, { color: theme.colors.textMain }]} numberOfLines={compact ? 1 : 2}>
+                    {event.title}
+                  </Text>
+                  {showActivity ? (
+                    <Text style={[styles.eventActivity, { color: theme.colors.textSub }]} numberOfLines={1}>
+                      注：{activityText}
+                    </Text>
+                  ) : null}
+                  {!matchedRating ? (
+                    <View pointerEvents="none" style={styles.plusIcon}>
+                      <Plus size={12} color={theme.colors.textSub} />
                     </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                  ) : null}
+                  {matchedRating && showRatingStrip ? (
+                    <Text
+                      style={[
+                        styles.ratingStrip,
+                        styles.eventRatingStrip,
+                        { color: theme.colors.textSub, fontFamily: theme.fonts.heading },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      ★ × {matchedRating.rating}  EFF × {matchedRating.efficiency}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+
+            {customRatings.map((rating) => {
+              const position = getPosition(rating.slot_start, rating.slot_end, dayStart);
+              if (!position) return null;
+
+              const activityText = rating.activity?.trim() ?? '';
+              const showActivity = activityText.length > 0;
+
+              return (
+                <TouchableOpacity
+                  key={rating.id}
+                  onPress={() => onPressRating(rating)}
+                  activeOpacity={0.75}
+                  testID={`${testID}-rating-${rating.id}`}
+                  style={[
+                    styles.ratingBlock,
+                    {
+                      top: position.top,
+                      height: position.height,
+                      backgroundColor: theme.colors.card,
+                      borderColor: theme.colors.cardBorder,
+                      borderLeftColor: theme.colors.primary,
+                    },
+                  ]}
+                >
+                  {showActivity ? (
+                    <Text style={[styles.activity, { color: theme.colors.textMain }]} numberOfLines={2}>
+                      {activityText}
+                    </Text>
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.ratingStrip,
+                      showActivity && styles.ratingMetaBelow,
+                      { color: theme.colors.success, fontFamily: theme.fonts.heading },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    ★ × {rating.rating}  EFF × {rating.efficiency}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
           {isSameDay(dayStart, now) && currentTimeOffset >= 0 && currentTimeOffset <= gridHeight ? (
@@ -301,57 +368,64 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: -6,
   },
-  columns: {
+  timeline: {
     position: 'absolute',
     top: 0,
     right: 0,
     bottom: 0,
-    flexDirection: 'row',
-  },
-  eventColumn: {
-    width: EVENT_COL_PERCENT,
-    height: '100%',
-    position: 'relative',
-    borderLeftWidth: StyleSheet.hairlineWidth,
-  },
-  ratingColumn: {
-    width: RATING_COL_PERCENT,
-    height: '100%',
-    position: 'relative',
     borderLeftWidth: StyleSheet.hairlineWidth,
   },
   block: {
     position: 'absolute',
-    borderLeftWidth: 3,
+    borderWidth: 1,
+    borderLeftWidth: 4,
     borderRadius: 4,
-    paddingHorizontal: 3,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     overflow: 'hidden',
   },
   ratingBlock: {
     position: 'absolute',
     left: 2,
-    width: '96%',
+    right: 4,
     borderWidth: 1,
     borderLeftWidth: 3,
+    borderStyle: 'dashed',
+    borderRadius: 4,
     padding: 4,
     overflow: 'hidden',
-  },
-  ratingMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 4,
   },
   ratingMetaBelow: {
     marginTop: 3,
   },
-  efficiency: {
-    fontSize: 10,
-  },
   activity: {
     fontSize: 11,
     lineHeight: 14,
+  },
+  eventTitle: {
+    fontSize: 12,
+    lineHeight: 15,
+    fontWeight: '600',
+  },
+  eventActivity: {
+    marginTop: 2,
+    fontSize: 10,
+    lineHeight: 13,
+  },
+  ratingStrip: {
+    fontSize: 10,
+    lineHeight: 13,
+  },
+  eventRatingStrip: {
+    position: 'absolute',
+    left: 6,
+    right: 6,
+    bottom: 3,
+  },
+  plusIcon: {
+    position: 'absolute',
+    right: 5,
+    bottom: 4,
   },
   currentTimeLine: {
     position: 'absolute',

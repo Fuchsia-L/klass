@@ -10,6 +10,7 @@ export interface ThemeConfig {
     primary: string;
     accent: string;
     success: string;
+    ratingFill: string;
     danger: string;
     warning?: string;
     textMain: string;

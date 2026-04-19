@@ -10,6 +10,7 @@ export const sakuraTheme: ThemeConfig = {
     primary: '#E11D48',
     accent: '#F472B6',
     success: '#10B981',
+    ratingFill: '#0EA5E9',
     danger: '#EF4444',
     textMain: '#1C1917',
     textSub: '#A8A29E',

@@ -10,6 +10,7 @@ export const cyberTheme: ThemeConfig = {
     primary: '#00F0FF',
     accent: '#FF2D78',
     success: '#39FF14',
+    ratingFill: '#39FF14',
     danger: '#EF4444',
     textMain: '#E2E8F0',
     textSub: '#64748B',
